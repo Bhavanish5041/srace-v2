@@ -1,4 +1,4 @@
-# SRACE v2 — Smart Room Automation & Control Engine
+# SRACE v2 - Smart Room Automation & Control Engine
 
 > Generalised intelligent room automation platform that works for any room —
 > classroom, office, staff room, auditorium — controlled via a JSON config file.
@@ -10,7 +10,7 @@
 
 Institutional buildings waste **40–70% electricity** running all fans and lights
 regardless of how many people are present or where they sit. Existing systems use
-dumb binary thresholds — everything on or everything off.
+dumb binary thresholds - everything on or everything off.
 
 SRACE fixes this with **real intelligence**: physics-based models, mathematical
 optimization, and reinforcement learning to run only the appliances that matter.
