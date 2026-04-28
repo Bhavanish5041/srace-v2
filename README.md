@@ -1,7 +1,7 @@
 # SRACE v2 - Smart Room Automation & Control Engine
 
-> Generalised intelligent room automation platform that works for any room —
-> classroom, office, staff room, auditorium — controlled via a JSON config file.
+> Generalised intelligent room automation platform that works for any room
+> classroom, office, staff room, auditorium controlled via a JSON config file.
 > Not a fixed installation but a deployable system.
 
 ---
@@ -57,11 +57,11 @@ Three simultaneous outputs:
 ### Crowd Detection
 | Considered | Decision | Reason |
 |-----------|----------|--------|
-| IR beam sensors | ❌ Dropped | Too primitive, no spatial info |
-| PIR sensors per zone | ❌ Dropped | Can't count, only detect presence |
-| LiDAR | ❌ Dropped | Too expensive |
-| **Samsung S23 Ultra + YOLOv8** | ✅ Production | Real-time counting with spatial zones |
-| ArUco markers on paper figurines | ✅ Physical demo | Cheap, reliable for static demo |
+| IR beam sensors |  Dropped | Too primitive, no spatial info |
+| PIR sensors per zone |  Dropped | Can't count, only detect presence |
+| LiDAR |  Dropped | Too expensive |
+| **Samsung S23 Ultra + YOLOv8** |  Production | Real-time counting with spatial zones |
+| ArUco markers on paper figurines |  Physical demo | Cheap, reliable for static demo |
 | Unity NavMesh agents | → UE5 NavMesh | Simulation crowd |
 
 ### Hardware
@@ -69,17 +69,17 @@ Three simultaneous outputs:
 |-----------|----------|--------|
 | ESP32 | → RPi Zero 2W | More compute for edge ML |
 | RPi Zero 2W per zone | → Single RPi 4 | Simplified demo |
-| Real fans/lights | ❌ Dropped | Too risky, college property |
-| Relay module (220V) | ❌ Dropped | Safety concern |
-| **20 LEDs on breadboard** | ✅ Final | Safe, cheap (₹180), clear visual |
+| Real fans/lights |  Dropped | Too risky, college property |
+| Relay module (220V) |  Dropped | Safety concern |
+| **20 LEDs on breadboard** |  Final | Safe, cheap (₹180), clear visual |
 
 ### ML Approach
 | Considered | Decision | Reason |
 |-----------|----------|--------|
-| LSTM for crowd prediction | ❌ Dropped | Redundant with real-time YOLO |
-| **PPO reinforcement learning** | ✅ | Learns optimal policy through simulation |
-| **River online ML** | ✅ | Anomaly detection, no batch retraining |
-| **ILP optimizer** | ✅ | Mathematical core, provably optimal |
+| LSTM for crowd prediction |  Dropped | Redundant with real-time YOLO |
+| **PPO reinforcement learning** |  | Learns optimal policy through simulation |
+| **River online ML** |  | Anomaly detection, no batch retraining |
+| **ILP optimizer** |  | Mathematical core, provably optimal |
 
 ### Visualization
 | Evolution | Final |
@@ -143,7 +143,7 @@ FORECAST_WINDOW    = 300 seconds (5 minutes)
 
 ## Repository Structure
 
-### Week 1 — Python Core (DONE)
+### Week 1   Python Core (DONE)
 
 ```
 srace-v2/
@@ -222,7 +222,7 @@ Demo table layout:
 ```
 
 ### Demo Flow
-1. **Empty room** — all LEDs off, UE5 dark, power = 0W
+1. **Empty room**   all LEDs off, UE5 dark, power = 0W
 2. **Place figurines** in zones → ArUco detects → optimizer runs
 3. **Specific LEDs light up** → UE5 fans spin, lights glow
 4. **Move figurines** → different LEDs respond in real time
@@ -258,24 +258,24 @@ Demo table layout:
 
 ## What Makes This Project Stand Out
 
-1. **Generalised** — any room via JSON config, not a one-off hack
-2. **Multi-domain** — CV + RL + combinatorics + physics + IoT + distributed systems
-3. **Mathematically rigorous** — ILP gives provably optimal solution
-4. **Physically accurate** — PDEs and ODEs, not just thresholds
-5. **Production grade** — MQTT, InfluxDB, Redis, WebSocket, Docker
-6. **Visually stunning** — UE5 Lumen photorealistic simulation
-7. **Publication worthy** — zero-shot PPO generalisation across room types is a genuine research contribution
+1. **Generalised**   any room via JSON config, not a one-off hack
+2. **Multi-domain**   CV + RL + combinatorics + physics + IoT + distributed systems
+3. **Mathematically rigorous**   ILP gives provably optimal solution
+4. **Physically accurate**   PDEs and ODEs, not just thresholds
+5. **Production grade**   MQTT, InfluxDB, Redis, WebSocket, Docker
+6. **Visually stunning**   UE5 Lumen photorealistic simulation
+7. **Publication worthy**   zero-shot PPO generalisation across room types is a genuine research contribution
 
 ---
 
 ## Key Concepts
 
-- **PPO** — RL algorithm that learns optimal appliance policy through 2M simulated room interactions, using clipped policy updates for stable training
-- **ILP** — Mathematical optimization that finds exact minimum power appliance combination using Branch and Bound, solved in milliseconds via PuLP CBC
-- **Set Cover** — NP-hard combinatorial problem: minimum cost subset of appliances covering all occupied zones
-- **River** — Online streaming ML, learns anomaly patterns live without batch retraining
-- **MQTT** — Lightweight IoT pub/sub protocol, QoS1 guaranteed delivery, hierarchical topic tree
-- **Lumen** — UE5 real-time global illumination, photorealistic lighting with zero shader code
+- **PPO**   RL algorithm that learns optimal appliance policy through 2M simulated room interactions, using clipped policy updates for stable training
+- **ILP**   Mathematical optimization that finds exact minimum power appliance combination using Branch and Bound, solved in milliseconds via PuLP CBC
+- **Set Cover**   NP-hard combinatorial problem: minimum cost subset of appliances covering all occupied zones
+- **River**   Online streaming ML, learns anomaly patterns live without batch retraining
+- **MQTT**   Lightweight IoT pub/sub protocol, QoS1 guaranteed delivery, hierarchical topic tree
+- **Lumen**   UE5 real-time global illumination, photorealistic lighting with zero shader code
 
 ---
 
