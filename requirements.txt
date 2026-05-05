@@ -4,3 +4,6 @@ pulp>=2.7
 matplotlib>=3.7
 fastapi>=0.110
 uvicorn>=0.29
+gymnasium>=0.29
+stable-baselines3>=2.3
+torch>=2.0

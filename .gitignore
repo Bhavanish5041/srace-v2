@@ -7,6 +7,10 @@ env/
 venv/
 output/
 
+# ML / RL
+models/*.zip
+logs/
+
 # Unity
 [Ll]ibrary/
 [Tt]emp/
