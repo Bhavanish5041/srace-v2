@@ -73,9 +73,14 @@ class CoverageResult:
         binary = np.zeros((n_total, n_zones), dtype=int)
 
         # Fan coverage
+        # Use 80% of min threshold for "meaningful contribution" — same logic
+        # as lights using 20 lux instead of the full 300 target.
+        # Without this, Gaussian decay causes adjacent zones to land at 0.49
+        # when threshold is 0.5, making greedy select zero fans.
+        airflow_threshold = cfg.comfort.min_airflow_ms * 0.8
         for fi in range(n_fans):
             for zi in range(n_zones):
-                airflow_ok = self.airflow_matrix[fi, zi] >= cfg.comfort.min_airflow_ms
+                airflow_ok = self.airflow_matrix[fi, zi] >= airflow_threshold
                 thermal_ok = self.thermal_impact[fi, zi] >= 0.5  # 0.5°C threshold
                 if airflow_ok or thermal_ok:
                     binary[fi, zi] = 1

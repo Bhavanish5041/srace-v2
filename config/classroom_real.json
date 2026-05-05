@@ -1,0 +1,45 @@
+{
+  "room": {
+    "name": "My Classroom",
+    "width": 10.8,
+    "depth": 7.6,
+    "ceiling_height": 2.86,
+    "ambient_temp": 30.0,
+    "ambient_co2": 400.0,
+    "ambient_lux": 50.0
+  },
+  "zones": {
+    "cols": 4,
+    "rows": 3
+  },
+  "fans": [
+    { "id": "F1",  "x": 1.35, "y": 1.27, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F2",  "x": 4.05, "y": 1.27, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F3",  "x": 6.75, "y": 1.27, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F4",  "x": 9.45, "y": 1.27, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F5",  "x": 1.35, "y": 3.80, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F6",  "x": 4.05, "y": 3.80, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F7",  "x": 6.75, "y": 3.80, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F8",  "x": 9.45, "y": 3.80, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F9",  "x": 2.70, "y": 6.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F10", "x": 8.10, "y": 6.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 }
+  ],
+  "lights": [
+    { "id": "L1",  "x": 1.35, "y": 1.27, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L2",  "x": 4.05, "y": 1.27, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L3",  "x": 6.75, "y": 1.27, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L4",  "x": 9.45, "y": 1.27, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L5",  "x": 1.35, "y": 3.80, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L6",  "x": 4.05, "y": 3.80, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L7",  "x": 6.75, "y": 3.80, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L8",  "x": 9.45, "y": 3.80, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L9",  "x": 2.70, "y": 6.33, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
+    { "id": "L10", "x": 8.10, "y": 6.33, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 }
+  ],
+  "comfort": {
+    "target_temp_c": 25.0,
+    "target_lux": 300.0,
+    "max_co2_ppm": 1000.0,
+    "min_airflow_ms": 0.5
+  }
+}

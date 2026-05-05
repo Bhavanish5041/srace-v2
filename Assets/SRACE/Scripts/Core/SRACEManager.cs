@@ -1,6 +1,10 @@
 // SRACEManager.cs — Main orchestrator MonoBehaviour
 // Loads JSON config → builds room → spawns fans/lights → runs physics → updates visuals.
 //
+// Modes:
+//   Local  — C# physics + greedy (keyboard presets 1-5, Space)
+//   API    — Python backend via SRACEApiClient (polls /room_state every 5s)
+//
 // Demo controls:
 //   [1] Empty room        [2] Single person (Z0)    [3] Center cluster
 //   [4] Full room          [5] Front row only
@@ -34,6 +38,12 @@ namespace SRACE.Core
         private int[] currentOccupancy;
         private bool[] activeFans;
         private bool[] activeLights;
+
+        // ── Public accessors for API client ──
+        public RoomConfig Config => config;
+        public FanObject[] FanObjects => fanObjects;
+        public LightObject[] LightObjects => lightObjects;
+        public ZoneHeatmap Heatmap => heatmap;
 
         // ══════════════════════════════════════════
         //  LIFECYCLE
@@ -72,7 +82,7 @@ namespace SRACE.Core
             else
             {
                 // Try loading from Resources folder
-                var asset = Resources.Load<TextAsset>("default_room");
+                var asset = Resources.Load<TextAsset>("classroom_real");
                 if (asset == null)
                 {
                     Debug.LogError("No room config found! Drag a TextAsset to SRACEManager " +
@@ -314,6 +324,58 @@ namespace SRACE.Core
         }
 
         // ══════════════════════════════════════════
+        //  API-DRIVEN STATE (called by SRACEApiClient)
+        // ══════════════════════════════════════════
+
+        /// <summary>
+        /// Apply a full room state received from the Python backend.
+        /// Bypasses local C# physics — Python is the source of truth.
+        /// </summary>
+        public void ApplyApiState(
+            int[] occupancy,
+            bool[] fanStates,
+            bool[] lightStates,
+            bool[] coveredZones,
+            float totalPowerW,
+            float powerSavedPct)
+        {
+            // Update occupancy
+            if (occupancy != null && occupancy.Length == config.NZones)
+                currentOccupancy = occupancy;
+
+            // Update fans
+            if (fanStates != null && fanStates.Length == fanObjects.Length)
+            {
+                activeFans = fanStates;
+                for (int i = 0; i < fanObjects.Length; i++)
+                    fanObjects[i].SetActive(activeFans[i]);
+            }
+
+            // Update lights
+            if (lightStates != null && lightStates.Length == lightObjects.Length)
+            {
+                activeLights = lightStates;
+                for (int i = 0; i < lightObjects.Length; i++)
+                    lightObjects[i].SetActive(activeLights[i]);
+            }
+
+            // Update heatmap
+            if (coveredZones != null && coveredZones.Length == config.NZones)
+                heatmap.UpdateHeatmap(currentOccupancy, coveredZones);
+
+            Debug.Log($"🌐 API → Power: {totalPowerW:F0}W  |  Saved: {powerSavedPct:F1}%  |  " +
+                      $"Fans: {CountTrue(activeFans)}/{activeFans.Length}  " +
+                      $"Lights: {CountTrue(activeLights)}/{activeLights.Length}");
+        }
+
+        private static int CountTrue(bool[] arr)
+        {
+            int n = 0;
+            foreach (var b in arr) if (b) n++;
+            return n;
+        }
+
+        // ══════════════════════════════════════════
         //  INPUT / DEMO PRESETS
         // ══════════════════════════════════════════
 
@@ -391,6 +453,17 @@ namespace SRACE.Core
         {
             currentOccupancy = occupancy;
             Debug.Log($"━━━ Scenario: {scenarioName} ━━━");
+
+            // Also notify the Python backend if the API client is present
+            if (apiClient == null)
+                apiClient = GetComponent<SRACEApiClient>();
+            if (apiClient == null)
+                apiClient = FindObjectOfType<SRACEApiClient>();
+
+            if (apiClient != null)
+                apiClient.SendOccupancy(occupancy);
         }
+
+        private SRACEApiClient apiClient; // cached reference
     }
 }

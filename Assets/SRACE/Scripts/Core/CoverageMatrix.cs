@@ -90,11 +90,16 @@ namespace SRACE.Core
             var binary = new int[nTotal, nZones];
 
             // Fan coverage
+            // Use 80% of min threshold for "meaningful contribution" — same logic
+            // as lights using 20 lux instead of the full 300 target.
+            // Without this, Gaussian decay causes adjacent zones to land at 0.49
+            // when threshold is 0.5, making greedy select zero fans.
+            float airflowThreshold = cfg.comfort.minAirflowMs * 0.8f;
             for (int fi = 0; fi < nFans; fi++)
             {
                 for (int zi = 0; zi < nZones; zi++)
                 {
-                    bool airflowOk = AirflowMatrix[fi, zi] >= cfg.comfort.minAirflowMs;
+                    bool airflowOk = AirflowMatrix[fi, zi] >= airflowThreshold;
                     bool thermalOk = ThermalImpact[fi, zi] >= 0.5f; // 0.5°C threshold
                     if (airflowOk || thermalOk)
                         binary[fi, zi] = 1;

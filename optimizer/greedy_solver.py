@@ -14,9 +14,48 @@ import numpy as np
 from core.coverage import CoverageResult
 
 
+def _greedy_subset(coverage: CoverageResult, appliance_range: range,
+                   occupied: set) -> tuple[list[int], set[int]]:
+    """Run greedy over a subset of appliances (e.g. just fans or just lights)."""
+    selected: list[int] = []
+    uncovered = occupied.copy()
+    used = set()
+
+    while uncovered:
+        best_idx = -1
+        best_ratio = -1.0
+        best_new = set()
+
+        for ai in appliance_range:
+            if ai in used:
+                continue
+            zones_this = coverage.covered_zones(ai)
+            new_zones = zones_this & uncovered
+            if not new_zones:
+                continue
+            ratio = len(new_zones) / coverage.appliance_watts[ai]
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_idx = ai
+                best_new = new_zones
+
+        if best_idx == -1:
+            break
+
+        selected.append(best_idx)
+        used.add(best_idx)
+        uncovered -= best_new
+
+    return selected, occupied - uncovered
+
+
 def solve_greedy(coverage: CoverageResult) -> dict:
     """
-    Greedy weighted set cover.
+    Greedy weighted set cover — fans and lights optimized SEPARATELY.
+
+    Fans cover airflow needs, lights cover illumination needs.
+    Running them together causes lights (cheaper per watt) to "steal"
+    coverage from fans, leaving occupied zones with zero airflow.
 
     Args:
         coverage: CoverageResult with binary matrix and occupied zones.
@@ -37,46 +76,29 @@ def solve_greedy(coverage: CoverageResult) -> dict:
             "zones_covered": set(),
         }
 
-    n_appliances = len(coverage.appliance_ids)
-    selected_indices: list[int] = []
-    uncovered = occupied.copy()
-    used = set()
+    n_fans = coverage.cfg.n_fans
+    n_total = len(coverage.appliance_ids)
 
-    while uncovered:
-        best_idx = -1
-        best_ratio = -1.0
-        best_new_zones = set()
+    # Phase 1: Greedy over fans only (airflow coverage)
+    fan_selected, fan_covered = _greedy_subset(
+        coverage, range(0, n_fans), occupied
+    )
 
-        for ai in range(n_appliances):
-            if ai in used:
-                continue
+    # Phase 2: Greedy over lights only (illumination coverage)
+    light_selected, light_covered = _greedy_subset(
+        coverage, range(n_fans, n_total), occupied
+    )
 
-            zones_this = coverage.covered_zones(ai)
-            new_zones = zones_this & uncovered
-            if not new_zones:
-                continue
-
-            # Efficiency ratio: zones covered per watt
-            ratio = len(new_zones) / coverage.appliance_watts[ai]
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_idx = ai
-                best_new_zones = new_zones
-
-        if best_idx == -1:
-            # No appliance can cover remaining zones
-            break
-
-        selected_indices.append(best_idx)
-        used.add(best_idx)
-        uncovered -= best_new_zones
-
+    # Merge results
+    selected_indices = fan_selected + light_selected
     total_watts = sum(coverage.appliance_watts[i] for i in selected_indices)
     selected_ids = [coverage.appliance_ids[i] for i in selected_indices]
+    zones_covered = fan_covered | light_covered
 
     return {
         "selected": selected_ids,
         "selected_indices": selected_indices,
         "total_watts": float(total_watts),
-        "zones_covered": occupied - uncovered,
+        "zones_covered": zones_covered,
     }
+
