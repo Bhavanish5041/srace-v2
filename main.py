@@ -44,7 +44,8 @@ def build_occupancy(cfg, scenario: dict) -> np.ndarray:
     return occ
 
 
-def run_scenario(cfg, scenario_name, scenario_zones, airflow_mat, lux_mat, save_viz=False):
+def run_scenario(cfg, scenario_name, scenario_zones, airflow_mat, lux_mat,
+                  save_viz=False, output_dir=None):
     """Run one scenario through the full pipeline."""
     print(f"\n{'━'*60}")
     print(f"  SCENARIO: {scenario_name}")
@@ -111,9 +112,8 @@ def run_scenario(cfg, scenario_name, scenario_zones, airflow_mat, lux_mat, save_
     # ── Visualization ──
     if save_viz:
         safe_name = scenario_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
-        viz_path = os.path.join(
-            os.path.dirname(__file__), "output", f"{safe_name}.png"
-        )
+        out = output_dir or os.path.join(os.path.dirname(__file__), "output")
+        viz_path = os.path.join(out, f"{safe_name}.png")
         render_room_state(
             cfg, coverage, zone_occ, greedy, ilp,
             airflow_mat, lux_mat,
@@ -123,6 +123,8 @@ def run_scenario(cfg, scenario_name, scenario_zones, airflow_mat, lux_mat, save_
 
 def main():
     """Run SRACE v2 pipeline."""
+    from datetime import datetime
+
     print("\n" + "▓" * 60)
     print("  SRACE v2 — Smart Room Automation & Control Engine")
     print("  Generalised room optimization via physics + set cover")
@@ -133,6 +135,11 @@ def main():
     cfg = load_config(config_path)
     print_config_summary(cfg)
 
+    # Create timestamped output directory so each run keeps its own files
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_output_dir = os.path.join(os.path.dirname(__file__), "output", f"run_{timestamp}")
+    os.makedirs(run_output_dir, exist_ok=True)
+
     # Pre-compute static physics (airflow + lux don't depend on occupancy)
     print("  Computing static physics models...")
     airflow_mat = compute_airflow_matrix(cfg)
@@ -142,10 +149,11 @@ def main():
 
     # Run all scenarios
     for name, zones in SCENARIOS.items():
-        run_scenario(cfg, name, zones, airflow_mat, lux_mat, save_viz=True)
+        run_scenario(cfg, name, zones, airflow_mat, lux_mat,
+                     save_viz=True, output_dir=run_output_dir)
 
     print(f"\n{'▓'*60}")
-    print("  All scenarios complete. Visualizations in ./output/")
+    print(f"  All scenarios complete. Visualizations in {run_output_dir}")
     print(f"{'▓'*60}\n")
 
 
