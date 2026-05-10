@@ -7,6 +7,8 @@ Usage:
     python ml/test_ppo.py --model models/best/best_model.zip  # Use best checkpoint
     python ml/test_ppo.py --render                     # Print per-step details
     python ml/test_ppo.py --scenario sparse            # Test specific occupancy
+    python ml/test_ppo.py --config config/office_small.json    # Test on a different room
+    python ml/test_ppo.py --config config/auditorium.json      # Large room generalisation
 
 Scenarios:
     random  — Random occupancy each episode (default)
@@ -44,9 +46,9 @@ class C:
     END    = "\033[0m"
 
 
-def make_scenario_env(scenario: str) -> SRACEEnv:
+def make_scenario_env(scenario: str, config_path: str = None) -> SRACEEnv:
     """Create an environment, optionally with fixed occupancy."""
-    env = SRACEEnv()
+    env = SRACEEnv(config_path=config_path)
     env._scenario = scenario  # tag for custom reset
     return env
 
@@ -116,9 +118,37 @@ def run_baseline(env: SRACEEnv, strategy: str, n_episodes: int, scenario: str):
     }
 
 
-def run_evaluation(model, env, n_episodes, scenario, render=False):
+def adapt_obs(obs, env_obs_size, model_obs_size):
+    """
+    Adapt an environment observation to match the model's expected input size.
+    Pads with zeros or truncates as needed.
+    """
+    if env_obs_size == model_obs_size:
+        return obs
+    adapted = np.zeros(model_obs_size, dtype=obs.dtype)
+    n_copy = min(env_obs_size, model_obs_size)
+    adapted[:n_copy] = obs[:n_copy]
+    return adapted
+
+
+def adapt_action(action, model_n_appliances, env_n_appliances):
+    """
+    Adapt a model's action to a different-sized environment.
+    If the new room has fewer appliances, truncate.
+    If more, pad with zeros (off).
+    """
+    if model_n_appliances == env_n_appliances:
+        return action
+    adapted = np.zeros(env_n_appliances, dtype=action.dtype)
+    n_copy = min(model_n_appliances, env_n_appliances)
+    adapted[:n_copy] = action[:n_copy]
+    return adapted
+
+
+def run_evaluation(model, env, n_episodes, scenario, render=False, model_n_appliances=None):
     """
     Run the PPO model through episodes and collect metrics.
+    Handles observation/action space mismatches for cross-room generalisation.
     """
     all_rewards = []
     all_powers = []
@@ -126,6 +156,16 @@ def run_evaluation(model, env, n_episodes, scenario, render=False):
     all_temps = []
     all_co2 = []
     all_steps_data = []
+
+    # Detect space sizes for adaptation
+    env_obs_size = env.observation_space.shape[0]
+    model_obs_size = model.observation_space.shape[0]
+    needs_adaptation = (model_n_appliances is not None and
+                        model_n_appliances != env.n_appliances)
+
+    if needs_adaptation:
+        print(f"  {C.YELLOW}Adapting: obs {env_obs_size}→{model_obs_size}, "
+              f"action {model_n_appliances}→{env.n_appliances}{C.END}\n")
 
     for ep in range(n_episodes):
         obs, _ = scenario_reset(env, scenario, seed=ep)
@@ -145,7 +185,10 @@ def run_evaluation(model, env, n_episodes, scenario, render=False):
             print(f"{'─' * 70}")
 
         for step in range(MAX_STEPS):
-            action, _ = model.predict(obs, deterministic=True)
+            # Adapt observation for model if room configs differ
+            model_obs = adapt_obs(obs, env_obs_size, model_obs_size) if needs_adaptation else obs
+            raw_action, _ = model.predict(model_obs, deterministic=True)
+            action = adapt_action(raw_action, model_n_appliances, env.n_appliances) if needs_adaptation else raw_action
             obs, reward, terminated, truncated, info = env.step(action)
 
             ep_reward += reward
@@ -275,6 +318,11 @@ def main():
         "--no-baseline", action="store_true",
         help="Skip baseline comparison"
     )
+    parser.add_argument(
+        "--config", type=str, default=None,
+        help="Path to room JSON config (default: config/default_room.json). "
+             "Use to test generalisation on unseen rooms."
+    )
     args = parser.parse_args()
 
     # ── Resolve model path ──
@@ -291,19 +339,34 @@ def main():
     # ── Load model ──
     print(f"\n{C.BOLD}  Loading model: {model_path}{C.END}")
     model = PPO.load(model_path)
+    model_n_appliances = model.action_space.shape[0]
+
+    # ── Resolve config path ──
+    config_path = None
+    if args.config:
+        config_path = os.path.join(_project_root, args.config) if not os.path.isabs(args.config) else args.config
+        if not os.path.exists(config_path):
+            print(f"{C.RED}  ✗ Config not found: {config_path}{C.END}")
+            sys.exit(1)
 
     # ── Create environment ──
-    env = SRACEEnv()
+    env = SRACEEnv(config_path=config_path)
     print(f"  Environment: {env.n_zones} zones, {env.n_fans} fans, "
           f"{env.n_lights} lights ({env.n_appliances} appliances)")
+    print(f"  Room: {env.cfg.name}")
     print(f"  Scenario: {args.scenario}")
+
+    if model_n_appliances != env.n_appliances:
+        print(f"{C.YELLOW}  ⚠ Action space mismatch: model={model_n_appliances}, "
+              f"env={env.n_appliances}. Adapting actions.{C.END}")
 
     # ── Run PPO evaluation ──
     print(f"\n  Running {args.episodes} episodes...\n")
     t0 = time.perf_counter()
 
     results = run_evaluation(
-        model, env, args.episodes, args.scenario, render=args.render
+        model, env, args.episodes, args.scenario, render=args.render,
+        model_n_appliances=model_n_appliances
     )
 
     elapsed = time.perf_counter() - t0

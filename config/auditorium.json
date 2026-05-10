@@ -1,0 +1,57 @@
+{
+  "room": {
+    "name": "Auditorium Hall",
+    "width": 15.0,
+    "depth": 10.0,
+    "ceiling_height": 4.0,
+    "ambient_temp": 33.0,
+    "ambient_co2": 450.0,
+    "ambient_lux": 20.0
+  },
+  "zones": {
+    "cols": 5,
+    "rows": 4
+  },
+  "fans": [
+    { "id": "F1",  "x": 1.5,  "y": 1.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F2",  "x": 4.5,  "y": 1.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F3",  "x": 7.5,  "y": 1.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F4",  "x": 10.5, "y": 1.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F5",  "x": 13.5, "y": 1.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F6",  "x": 1.5,  "y": 3.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F7",  "x": 4.5,  "y": 3.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F8",  "x": 7.5,  "y": 3.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F9",  "x": 10.5, "y": 3.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F10", "x": 13.5, "y": 3.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F11", "x": 3.75, "y": 6.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F12", "x": 7.5,  "y": 6.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F13", "x": 11.25,"y": 6.25, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F14", "x": 3.75, "y": 8.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F15", "x": 7.5,  "y": 8.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 },
+    { "id": "F16", "x": 11.25,"y": 8.75, "power_watts": 90, "airflow_radius": 3.5, "airflow_peak_ms": 3.0 }
+  ],
+  "lights": [
+    { "id": "L1",  "x": 1.5,  "y": 1.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L2",  "x": 4.5,  "y": 1.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L3",  "x": 7.5,  "y": 1.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L4",  "x": 10.5, "y": 1.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L5",  "x": 13.5, "y": 1.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L6",  "x": 1.5,  "y": 3.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L7",  "x": 4.5,  "y": 3.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L8",  "x": 7.5,  "y": 3.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L9",  "x": 10.5, "y": 3.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L10", "x": 13.5, "y": 3.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L11", "x": 3.75, "y": 6.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L12", "x": 7.5,  "y": 6.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L13", "x": 11.25,"y": 6.25, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L14", "x": 3.75, "y": 8.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L15", "x": 7.5,  "y": 8.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 },
+    { "id": "L16", "x": 11.25,"y": 8.75, "power_watts": 50, "lumens": 4000, "height_above_floor": 4.0 }
+  ],
+  "comfort": {
+    "target_temp_c": 25.0,
+    "target_lux": 250.0,
+    "max_co2_ppm": 1200.0,
+    "min_airflow_ms": 0.5
+  }
+}

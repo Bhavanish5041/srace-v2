@@ -1,0 +1,35 @@
+{
+  "room": {
+    "name": "Small Office",
+    "width": 6.0,
+    "depth": 5.0,
+    "ceiling_height": 2.7,
+    "ambient_temp": 32.0,
+    "ambient_co2": 420.0,
+    "ambient_lux": 30.0
+  },
+  "zones": {
+    "cols": 3,
+    "rows": 2
+  },
+  "fans": [
+    { "id": "F1", "x": 1.5, "y": 1.25, "power_watts": 60, "airflow_radius": 2.5, "airflow_peak_ms": 2.0 },
+    { "id": "F2", "x": 4.5, "y": 1.25, "power_watts": 60, "airflow_radius": 2.5, "airflow_peak_ms": 2.0 },
+    { "id": "F3", "x": 1.5, "y": 3.75, "power_watts": 60, "airflow_radius": 2.5, "airflow_peak_ms": 2.0 },
+    { "id": "F4", "x": 4.5, "y": 3.75, "power_watts": 60, "airflow_radius": 2.5, "airflow_peak_ms": 2.0 }
+  ],
+  "lights": [
+    { "id": "L1", "x": 1.0, "y": 1.25, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 },
+    { "id": "L2", "x": 3.0, "y": 1.25, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 },
+    { "id": "L3", "x": 5.0, "y": 1.25, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 },
+    { "id": "L4", "x": 1.0, "y": 3.75, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 },
+    { "id": "L5", "x": 3.0, "y": 3.75, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 },
+    { "id": "L6", "x": 5.0, "y": 3.75, "power_watts": 36, "lumens": 2800, "height_above_floor": 2.7 }
+  ],
+  "comfort": {
+    "target_temp_c": 24.0,
+    "target_lux": 400.0,
+    "max_co2_ppm": 800.0,
+    "min_airflow_ms": 0.4
+  }
+}

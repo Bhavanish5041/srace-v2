@@ -223,6 +223,10 @@ python3 ml/test_ppo.py --episodes 10 --render
 python3 ml/test_ppo.py --scenario full --render     # all zones occupied
 python3 ml/test_ppo.py --scenario sparse --render    # 2-3 zones only
 python3 ml/test_ppo.py --scenario empty --render     # no occupants
+
+# Test on a completely different room (zero-shot generalisation)
+python3 ml/test_ppo.py --config config/office_small.json --scenario full --render
+python3 ml/test_ppo.py --config config/auditorium.json --scenario sparse --render
 ```
 
 ### FastAPI Backend
@@ -234,8 +238,11 @@ uvicorn backend.api:app --reload --port 8000
 
 # Swagger UI: http://localhost:8000/docs
 # Endpoints:
-#   GET  /room_state      — physics + optimizer result
+#   GET  /room_state      — physics + greedy optimizer result
 #   POST /set_occupancy   — update zone occupancy
+#   GET  /ppo_action      — PPO agent decision (with physics state)
+#   POST /ppo_reset       — reset PPO agent state
+#   GET  /compare         — greedy vs PPO side-by-side
 #   GET  /config          — raw room configuration
 ```
 

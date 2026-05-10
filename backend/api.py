@@ -7,6 +7,9 @@ Unity, the React dashboard, or any HTTP client can consume these.
 Endpoints:
     GET  /room_state     — Run physics + greedy optimizer, return full state
     POST /set_occupancy  — Update zone occupancy counts
+    GET  /ppo_action     — Run trained PPO agent, return appliance decisions
+    GET  /compare        — Compare greedy vs PPO side-by-side
+    GET  /config         — Raw room configuration
     GET  /docs           — Auto-generated Swagger UI (courtesy of FastAPI)
 
 Run:
@@ -35,6 +38,14 @@ from physics.co2_model import simulate_co2
 from physics.lighting import compute_lux_matrix
 from optimizer.greedy_solver import solve_greedy
 from optimizer.ilp_solver import solve_ilp
+
+# PPO (loaded lazily — works even if model file is missing)
+try:
+    from stable_baselines3 import PPO as PPOModel
+    PPO_AVAILABLE = True
+except ImportError:
+    PPO_AVAILABLE = False
+    print("⚠ stable-baselines3 not installed — PPO endpoints disabled")
 
 # ══════════════════════════════════════════════════════════════
 #  APP SETUP
@@ -67,9 +78,16 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "classroom_real.json"
 cfg: RoomConfig = None
 airflow_mat: np.ndarray = None
 lux_mat: np.ndarray = None
+ppo_model = None  # Loaded at startup if model file exists
 
 # Current occupancy state (mutable — updated via POST /set_occupancy)
 zone_occupancy: np.ndarray = None
+
+# PPO state tracking (persists between API calls)
+ppo_appliance_states: np.ndarray = None
+ppo_zone_temps: np.ndarray = None
+ppo_zone_co2: np.ndarray = None
+ppo_zone_lux: np.ndarray = None
 
 
 @app.on_event("startup")
@@ -96,6 +114,22 @@ def startup():
 
     # Default: empty room
     zone_occupancy = np.zeros(cfg.n_zones)
+
+    # Load PPO model if available
+    global ppo_model, ppo_appliance_states, ppo_zone_temps, ppo_zone_co2, ppo_zone_lux
+    ppo_appliance_states = np.zeros(cfg.n_appliances, dtype=np.int8)
+    ppo_zone_temps = np.full(cfg.n_zones, cfg.ambient_temp)
+    ppo_zone_co2 = np.full(cfg.n_zones, cfg.ambient_co2)
+    ppo_zone_lux = np.full(cfg.n_zones, cfg.ambient_lux)
+
+    if PPO_AVAILABLE:
+        model_path = PROJECT_ROOT / "models" / "srace_ppo.zip"
+        if model_path.exists():
+            ppo_model = PPOModel.load(str(model_path))
+            print(f"✓ PPO model loaded: {model_path.name}")
+        else:
+            print(f"⚠ No PPO model at {model_path} — /ppo_action will return 404")
+
     print(f"✓ SRACE API ready — {cfg.n_zones} zones, {cfg.n_appliances} appliances\n")
 
 
@@ -318,4 +352,197 @@ def get_config():
             "max_co2_ppm": cfg.comfort.max_co2_ppm,
             "min_airflow_ms": cfg.comfort.min_airflow_ms,
         },
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  PPO ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+# Observation normalisation constants (must match ml/gym_env.py)
+_MAX_PEOPLE = 8
+_MAX_TEMP = 45.0
+_MAX_CO2 = 2000.0
+_MAX_LUX = 1500.0
+
+# Simplified physics constants (must match ml/gym_env.py)
+_THERMAL_DECAY = 0.02
+_CO2_DECAY_FAN = 0.01
+_CO2_GENERATION = 5.0
+_CO2_NATURAL_DECAY = 0.005
+_OCCUPANT_HEAT = 0.05
+
+
+def _build_ppo_observation():
+    """Build a normalised observation vector matching the PPO training format."""
+    obs = np.concatenate([
+        zone_occupancy / _MAX_PEOPLE,
+        ppo_zone_temps / _MAX_TEMP,
+        ppo_zone_co2 / _MAX_CO2,
+        ppo_zone_lux / _MAX_LUX,
+        ppo_appliance_states.astype(np.float32),
+    ])
+    return obs.astype(np.float32)
+
+
+def _ppo_physics_tick():
+    """Run one step of simplified physics (matches ml/gym_env.py)."""
+    global ppo_zone_temps, ppo_zone_co2, ppo_zone_lux
+
+    from physics.airflow import total_airflow_per_zone
+    from physics.lighting import total_lux_per_zone
+
+    fan_states = ppo_appliance_states[:cfg.n_fans].astype(bool)
+    light_states = ppo_appliance_states[cfg.n_fans:].astype(bool)
+
+    # Airflow → Temperature
+    if fan_states.any():
+        airflow = total_airflow_per_zone(airflow_mat, fan_states)
+    else:
+        airflow = np.zeros(cfg.n_zones)
+
+    target_t = cfg.comfort.target_temp_c
+    cooling = _THERMAL_DECAY * airflow * (ppo_zone_temps - target_t)
+    ppo_zone_temps = ppo_zone_temps - cooling
+    ppo_zone_temps = ppo_zone_temps + _OCCUPANT_HEAT * zone_occupancy
+    ppo_zone_temps = ppo_zone_temps + 0.005 * (cfg.ambient_temp - ppo_zone_temps)
+    ppo_zone_temps = np.clip(ppo_zone_temps, 15.0, _MAX_TEMP)
+
+    # CO₂
+    ppo_zone_co2 = ppo_zone_co2 + _CO2_GENERATION * zone_occupancy
+    co2_removal = _CO2_DECAY_FAN * airflow * (ppo_zone_co2 - cfg.ambient_co2)
+    ppo_zone_co2 = ppo_zone_co2 - co2_removal
+    ppo_zone_co2 = ppo_zone_co2 - _CO2_NATURAL_DECAY * (ppo_zone_co2 - cfg.ambient_co2)
+    ppo_zone_co2 = np.clip(ppo_zone_co2, cfg.ambient_co2, _MAX_CO2)
+
+    # Lighting
+    if light_states.any():
+        ppo_zone_lux = total_lux_per_zone(lux_mat, light_states, cfg.ambient_lux)
+    else:
+        ppo_zone_lux = np.full(cfg.n_zones, cfg.ambient_lux)
+
+
+@app.get("/ppo_action", summary="Run PPO agent to get appliance decisions")
+def ppo_action():
+    """
+    Use the trained PPO reinforcement learning agent to decide which
+    appliances to activate based on the current room state.
+
+    Unlike the greedy optimizer (static snapshot), the PPO agent maintains
+    internal state and makes temporally-aware decisions — it knows that
+    turning fans on NOW prevents overheating later.
+
+    Returns the same structure as /room_state but using PPO decisions.
+    """
+    global ppo_appliance_states
+
+    if ppo_model is None:
+        raise HTTPException(
+            status_code=404,
+            detail="PPO model not loaded. Train with: python3 ml/train_ppo.py --timesteps 500000"
+        )
+
+    # Build observation from current state
+    obs = _build_ppo_observation()
+
+    # Get PPO action (deterministic)
+    action, _ = ppo_model.predict(obs, deterministic=True)
+    ppo_appliance_states = np.array(action, dtype=np.int8)
+
+    # Run one physics tick to update state
+    _ppo_physics_tick()
+
+    # Build response
+    total_power = float(np.dot(ppo_appliance_states, np.array(
+        [f.power_watts for f in cfg.fans] + [l.power_watts for l in cfg.lights]
+    )))
+    max_watts = sum(a.power_watts for a in cfg.all_appliances)
+    saved_pct = (1 - total_power / max_watts) * 100 if max_watts > 0 else 100.0
+
+    appliances_out = []
+    for fi, fan in enumerate(cfg.fans):
+        appliances_out.append({
+            "id": fan.id,
+            "type": "fan",
+            "x": round(fan.x, 2),
+            "y": round(fan.y, 2),
+            "power_watts": fan.power_watts,
+            "active": bool(ppo_appliance_states[fi]),
+        })
+    for li, light in enumerate(cfg.lights):
+        appliances_out.append({
+            "id": light.id,
+            "type": "light",
+            "x": round(light.x, 2),
+            "y": round(light.y, 2),
+            "power_watts": light.power_watts,
+            "active": bool(ppo_appliance_states[cfg.n_fans + li]),
+        })
+
+    return {
+        "solver": "ppo",
+        "room_name": cfg.name,
+        "appliances": appliances_out,
+        "total_power_watts": total_power,
+        "max_power_watts": max_watts,
+        "power_saved_pct": round(saved_pct, 1),
+        "avg_temp": round(float(ppo_zone_temps.mean()), 1),
+        "avg_co2": round(float(ppo_zone_co2.mean()), 0),
+        "avg_lux": round(float(ppo_zone_lux.mean()), 1),
+        "n_active": int(ppo_appliance_states.sum()),
+        "n_fans_on": int(ppo_appliance_states[:cfg.n_fans].sum()),
+        "n_lights_on": int(ppo_appliance_states[cfg.n_fans:].sum()),
+        "total_people": int(zone_occupancy.sum()),
+        "occupied_zones": int((zone_occupancy > 0).sum()),
+    }
+
+
+@app.post("/ppo_reset", summary="Reset PPO agent state")
+def ppo_reset():
+    """Reset the PPO agent's internal physics state (temps, CO₂, lux)."""
+    global ppo_appliance_states, ppo_zone_temps, ppo_zone_co2, ppo_zone_lux
+    ppo_appliance_states = np.zeros(cfg.n_appliances, dtype=np.int8)
+    ppo_zone_temps = np.full(cfg.n_zones, cfg.ambient_temp)
+    ppo_zone_co2 = np.full(cfg.n_zones, cfg.ambient_co2)
+    ppo_zone_lux = np.full(cfg.n_zones, cfg.ambient_lux)
+    return {"status": "ok", "message": "PPO state reset to ambient conditions."}
+
+
+@app.get("/compare", summary="Compare greedy vs PPO side-by-side")
+def compare_solvers():
+    """
+    Run both the greedy optimizer and PPO agent on the current occupancy,
+    and return their results side-by-side for comparison.
+    """
+    # Get greedy result
+    greedy_result = get_room_state()
+
+    # Get PPO result (or placeholder if unavailable)
+    if ppo_model is not None:
+        ppo_result = ppo_action()
+    else:
+        ppo_result = {"error": "PPO model not loaded"}
+
+    return {
+        "occupancy": {
+            "total_people": int(zone_occupancy.sum()),
+            "occupied_zones": int((zone_occupancy > 0).sum()),
+            "total_zones": cfg.n_zones,
+        },
+        "greedy": {
+            "power_watts": greedy_result.total_power_watts,
+            "power_saved_pct": greedy_result.power_saved_pct,
+            "n_active": len([a for a in greedy_result.appliances if a.active]),
+            "fans_on": [a.id for a in greedy_result.appliances if a.active and a.type == "fan"],
+            "lights_on": [a.id for a in greedy_result.appliances if a.active and a.type == "light"],
+        },
+        "ppo": {
+            "power_watts": ppo_result.get("total_power_watts", 0),
+            "power_saved_pct": ppo_result.get("power_saved_pct", 0),
+            "n_active": ppo_result.get("n_active", 0),
+            "avg_temp": ppo_result.get("avg_temp", 0),
+            "avg_co2": ppo_result.get("avg_co2", 0),
+            "fans_on": ppo_result.get("n_fans_on", 0),
+            "lights_on": ppo_result.get("n_lights_on", 0),
+        } if "error" not in ppo_result else ppo_result,
     }
