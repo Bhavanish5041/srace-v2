@@ -197,9 +197,25 @@ namespace SRACE.Core
             var airflowMatrix = AirflowModel.ComputeAirflowMatrix(config);
             var luxMatrix = LightingModel.ComputeLuxMatrix(config);
 
-            // Placeholder thermal/CO2 (same shape, zeros — full models are separate scripts)
+            // Estimate thermal impact from airflow (analytical, no ODE solver needed)
+            // ΔT ≈ convCoeff × airflow × (T_ambient − T_target) × forecastTime
+            // This approximates the marginal cooling each fan provides.
+            const float convCoeff = 0.15f;    // convection coefficient (matches Python)
+            const float forecastSec = 300f;   // 5-minute forecast window
+            float tempDelta = config.ambientTemp - config.comfort.targetTempC;
             var thermalImpact = new float[config.NFans, config.NZones];
             var co2Reduction = new float[config.NFans, config.NZones];
+            for (int fi = 0; fi < config.NFans; fi++)
+            {
+                for (int zi = 0; zi < config.NZones; zi++)
+                {
+                    // Thermal: cooling proportional to airflow and temperature difference
+                    thermalImpact[fi, zi] = convCoeff * airflowMatrix[fi, zi]
+                                            * Mathf.Max(tempDelta, 0f) * forecastSec * 0.01f;
+                    // CO₂: ventilation proportional to airflow
+                    co2Reduction[fi, zi] = airflowMatrix[fi, zi] * 50f; // rough ppm reduction
+                }
+            }
 
             // 2. Find occupied zones
             var occupiedZones = new HashSet<int>();
@@ -250,8 +266,10 @@ namespace SRACE.Core
         }
 
         /// <summary>
-        /// Simple greedy activation: turn on appliances that cover the most
-        /// uncovered occupied zones, until all are covered.
+        /// Greedy activation with SEPARATE phases for fans and lights.
+        /// Fans cover airflow/thermal needs, lights cover illumination.
+        /// Running them together causes lights (cheaper per watt) to "steal"
+        /// coverage from fans, leaving occupied zones with zero airflow.
         /// </summary>
         private void GreedyActivate(HashSet<int> occupiedZones)
         {
@@ -265,15 +283,28 @@ namespace SRACE.Core
                 return;
             }
 
+            // Phase 1: Greedy over FANS only (airflow coverage)
+            GreedySubset(occupiedZones, 0, config.NFans);
+
+            // Phase 2: Greedy over LIGHTS only (illumination coverage)
+            GreedySubset(occupiedZones, config.NFans, config.NAppliances);
+
+            ApplyApplianceStates();
+        }
+
+        /// <summary>
+        /// Run greedy over a subset of appliances [startIdx, endIdx).
+        /// </summary>
+        private void GreedySubset(HashSet<int> occupiedZones, int startIdx, int endIdx)
+        {
             var uncovered = new HashSet<int>(occupiedZones);
 
-            // Greedy loop — pick appliance covering most uncovered zones per watt
             while (uncovered.Count > 0)
             {
                 int bestApp = -1;
                 float bestScore = -1f;
 
-                for (int ai = 0; ai < config.NAppliances; ai++)
+                for (int ai = startIdx; ai < endIdx; ai++)
                 {
                     bool alreadyOn = ai < config.NFans ? activeFans[ai] : activeLights[ai - config.NFans];
                     if (alreadyOn) continue;
@@ -311,8 +342,6 @@ namespace SRACE.Core
                         uncovered.Remove(zi);
                 }
             }
-
-            ApplyApplianceStates();
         }
 
         private void ApplyApplianceStates()

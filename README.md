@@ -1,7 +1,7 @@
-# SRACE v2 - Smart Room Automation & Control Engine
+# SRACE v2 — Smart Room Automation & Control Engine
 
-> Generalised intelligent room automation platform that works for any room
-> classroom, office, staff room, auditorium controlled via a JSON config file.
+> Generalised intelligent room automation platform that works for **any room** —
+> classroom, office, staff room, auditorium — controlled via a single JSON config file.
 > Not a fixed installation but a deployable system.
 
 ---
@@ -10,7 +10,7 @@
 
 Institutional buildings waste **40–70% electricity** running all fans and lights
 regardless of how many people are present or where they sit. Existing systems use
-dumb binary thresholds - everything on or everything off.
+dumb binary thresholds — everything on or everything off.
 
 SRACE fixes this with **real intelligence**: physics-based models, mathematical
 optimization, and reinforcement learning to run only the appliances that matter.
@@ -20,7 +20,7 @@ optimization, and reinforcement learning to run only the appliances that matter.
 ## System Architecture
 
 ```
-S23 Ultra / UE5 NavMesh Agents
+S23 Ultra / Unity NavMesh Agents
   → YOLOv8 / ArUco / Zone triggers
   → Zone counts every 5 seconds
         ↓
@@ -34,57 +34,117 @@ Physics Engine (Python)
 Set Cover Optimizer
   → Greedy (real time, every 30s)
   → ILP via PuLP (exact optimal, every 60s)
-  → Genetic Algorithm (layout changes)
         ↓
 PPO RL Agent (Stable-Baselines3)
   → State: crowd + temps + CO₂ + lux + appliance states
   → Action: which fans/lights to toggle
-  → Reward: −energy + comfort − switching + air quality
+  → Reward: −power + comfort − switching + air_quality − danger
         ↓
-MQTT Broker (Mosquitto)
-  → Publishes control commands
+FastAPI Backend
+  → REST endpoints (GET /room_state, POST /set_occupancy)
+  → Unity polls every 5 seconds
         ↓
-Three simultaneous outputs:
-  RPi GPIO → LED panel (physical)
-  UE5 simulation → fans spin, lights glow, heatmap
-  React dashboard → live data, power gauge, RL log
+Two simultaneous outputs:
+  Unity 3D → code-generated room, spinning fans, glowing lights, zone heatmap
+  FastAPI Swagger UI → live data, power metrics
 ```
 
 ---
 
-## Key Design Decisions
+## Current Progress
 
-### Crowd Detection
-| Considered | Decision | Reason |
-|-----------|----------|--------|
-| IR beam sensors |  Dropped | Too primitive, no spatial info |
-| PIR sensors per zone |  Dropped | Can't count, only detect presence |
-| LiDAR |  Dropped | Too expensive |
-| **Samsung S23 Ultra + YOLOv8** |  Production | Real-time counting with spatial zones |
-| ArUco markers on paper figurines |  Physical demo | Cheap, reliable for static demo |
-| Unity NavMesh agents | → UE5 NavMesh | Simulation crowd |
+### ✅ Week 1 — Python Core (Complete)
+- [x] Generalised room config loader (JSON → dataclasses)
+- [x] 4 physics models (airflow, thermal, CO₂, lighting)
+- [x] Coverage matrix builder
+- [x] Greedy weighted set cover optimizer
+- [x] ILP exact optimizer (PuLP CBC)
+- [x] Full pipeline orchestrator (`main.py` with 5 test scenarios)
+- [x] Matplotlib room grid visualization
 
-### Hardware
-| Considered | Decision | Reason |
-|-----------|----------|--------|
-| ESP32 | → RPi Zero 2W | More compute for edge ML |
-| RPi Zero 2W per zone | → Single RPi 4 | Simplified demo |
-| Real fans/lights |  Dropped | Too risky, college property |
-| Relay module (220V) |  Dropped | Safety concern |
-| **20 LEDs on breadboard** |  Final | Safe, cheap (₹180), clear visual |
+### ✅ Week 2 — Unity Simulation (Complete)
+- [x] Code-generated 3D room from JSON config (floor, walls, ceiling)
+- [x] Fan objects with spinning blades, spin-up/down animation, color states
+- [x] Light objects with Unity Light component, emission glow, halos
+- [x] Zone heatmap (red=occupied+uncovered, green=covered, grey=empty)
+- [x] Orbit camera with mouse controls
+- [x] Keyboard presets (1-5) for occupancy scenarios
+- [x] C# ports of airflow and lighting physics
+- [x] Binary coverage matrix (C# port)
+- [x] Two-phase greedy optimizer (fans and lights run separately)
+- [x] Analytical thermal impact estimation for fan coverage
 
-### ML Approach
-| Considered | Decision | Reason |
-|-----------|----------|--------|
-| LSTM for crowd prediction |  Dropped | Redundant with real-time YOLO |
-| **PPO reinforcement learning** |  | Learns optimal policy through simulation |
-| **River online ML** |  | Anomaly detection, no batch retraining |
-| **ILP optimizer** |  | Mathematical core, provably optimal |
+### ✅ Week 3 — RL + Backend + Integration (Complete)
+- [x] Custom Gymnasium environment (`SRACEEnv`) with simplified physics
+- [x] PPO training pipeline (Stable-Baselines3, configurable timesteps)
+- [x] Multi-objective reward function (5-term: power, comfort, switching, air quality, danger)
+- [x] PPO evaluation framework with baseline comparison
+- [x] FastAPI REST backend (`/room_state`, `/set_occupancy`, `/config`)
+- [x] Unity ↔ Python bridge (`SRACEApiClient` polls backend every 5s)
+- [x] Trained PPO model saved to `models/srace_ppo.zip`
 
-### Visualization
-| Evolution | Final |
-|-----------|-------|
-| React dashboard only → Pygame 2D → Unity 3D → **Unreal Engine 5** | UE5 for Lumen lighting, Nanite, NavMesh, existing experience |
+---
+
+## Repository Structure
+
+```
+srace-v2/
+├── config/
+│   ├── default_room.json             # 10×8m classroom, 4×3 grid, 10 fans, 10 lights
+│   └── classroom_real.json           # Real classroom dimensions (10.8×7.6m)
+│
+├── core/
+│   ├── room_config.py                # RoomConfig, Zone, Fan, Light, ComfortParams
+│   └── coverage.py                   # Binary coverage matrix from physics
+│
+├── physics/
+│   ├── airflow.py                    # Gaussian decay fan airflow model
+│   ├── thermal.py                    # Thermal ODE (Method of Lines + RK45)
+│   ├── co2_model.py                  # CO₂ mass-balance ODE
+│   └── lighting.py                   # Cosine-law illuminance model
+│
+├── optimizer/
+│   ├── greedy_solver.py              # Greedy weighted set cover (fans/lights separate)
+│   └── ilp_solver.py                 # Exact ILP via PuLP CBC
+│
+├── ml/
+│   ├── gym_env.py                    # Custom Gymnasium environment for PPO
+│   ├── reward.py                     # 5-term reward: power, comfort, switching, air, danger
+│   ├── train_ppo.py                  # PPO training (SB3, EvalCallback, resume support)
+│   └── test_ppo.py                   # Evaluation with scenarios + baseline comparison
+│
+├── backend/
+│   └── api.py                        # FastAPI server (room_state, set_occupancy, config)
+│
+├── models/
+│   ├── srace_ppo.zip                 # Trained PPO model
+│   ├── best/                         # Best model checkpoint (from EvalCallback)
+│   └── eval_logs/                    # Training evaluation logs
+│
+├── visualization/
+│   └── room_grid.py                  # Matplotlib room grid visualization
+│
+├── Assets/SRACE/Scripts/             # Unity C# simulation
+│   ├── Core/
+│   │   ├── RoomConfig.cs             # C# data model (Zone, Fan, Light, ComfortParams)
+│   │   ├── RoomConfigLoader.cs       # JSON → RoomConfig parser
+│   │   ├── CoverageMatrix.cs         # Binary coverage matrix (C# port)
+│   │   ├── SRACEManager.cs           # Main orchestrator (physics → greedy → visuals)
+│   │   └── SRACEApiClient.cs         # Unity ↔ Python REST bridge
+│   ├── Environment/
+│   │   ├── RoomBuilder.cs            # Code-generates floor, walls, ceiling
+│   │   ├── FanObject.cs              # Ceiling fan with spinning blades
+│   │   ├── LightObject.cs            # Ceiling light with glow + halo
+│   │   ├── ZoneHeatmap.cs            # Color-coded zone overlay
+│   │   └── ClassroomCamera.cs        # Orbit camera with mouse control
+│   └── Physics/
+│       ├── AirflowModel.cs           # Gaussian airflow (C# port)
+│       └── LightingModel.cs          # Cosine-law lux (C# port)
+│
+├── output/                           # Generated Matplotlib visualizations
+├── main.py                           # Full pipeline: config → physics → optimizer → output
+└── requirements.txt                  # Python dependencies
+```
 
 ---
 
@@ -93,13 +153,25 @@ Three simultaneous outputs:
 | Formula | Used For | Module |
 |---------|----------|--------|
 | `v(f,z) = v_peak · exp(−d²/(2σ²))`, σ = radius/2 | Airflow per zone from each fan | `physics/airflow.py` |
-| `dT/dt = −α·v·(T−T_target) + Q_occ/(ρ·cp·V) + k·(T_amb−T)` | Temperature forecast 5 min ahead | `physics/thermal.py` |
+| `dT/dt = −α·v·(T−T_target) + Q_occ/(ρ·cp·V) + k·(T_amb−T)` | Temperature forecast (5 min, RK45) | `physics/thermal.py` |
 | `dC/dt = (n·G)/(V) − λ_vent·(C−C_ambient)` | CO₂ per zone over time | `physics/co2_model.py` |
 | `E = (Φ·cos³θ)/(2π·h²)` | Lux per zone from each ceiling light | `physics/lighting.py` |
 | `min Σ w_j·x_j  s.t. coverage ≥ 1 ∀ occupied zones` | Minimum power appliance subset | `optimizer/ilp_solver.py` |
-| `R = −α·P + β·comfort − γ·switches + δ·air_quality` | PPO reward function | `ml/gym_env.py` (Week 2+) |
+
+### PPO Reward Function
+
+```
+R = −α·power + β·comfort − γ·switching + δ·air_quality − ε·danger
+
+α = 0.15  (power penalty)
+β = 0.55  (comfort: 40% temp + 30% CO₂ + 15% coverage + 15% lux)
+γ = 0.05  (switching penalty)
+δ = 0.15  (air quality bonus)
+ε = 0.50  (danger penalty: >35°C or >1200 ppm CO₂)
+```
 
 ### Physical Constants
+
 ```
 AIR_DENSITY        = 1.2 kg/m³
 SPECIFIC_HEAT      = 1005 J/(kg·K)
@@ -114,188 +186,167 @@ FORECAST_WINDOW    = 300 seconds (5 minutes)
 
 ---
 
-## Subject Mappings (Academic)
+## Running
 
-| Subject | SRACE Component |
-|---------|----------------|
-| **Computer Networks** | MQTT QoS1, WebSocket, topic tree, RPi edge node |
-| **Data Analysis & Algorithms** | InfluxDB time-series, Greedy O(n log n), solver comparison, River streaming ML |
-| **Discrete Mathematics** | Weighted Set Cover NP-hard, ILP binary variables, bipartite coverage graph, GA chromosome encoding |
-| **AI and ML** | PPO RL agent, YOLO CV, zero-shot generalisation, multi-objective reward |
+### Prerequisites
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Python Pipeline
+
+```bash
+# Run full physics + optimizer pipeline with 5 test scenarios
+python3 main.py
+# Output: terminal results + visualizations in ./output/
+```
+
+### PPO Training & Evaluation
+
+```bash
+# Train PPO agent (quick test)
+python3 ml/train_ppo.py --timesteps 1000
+
+# Full training run
+python3 ml/train_ppo.py --timesteps 500000
+
+# Resume training from checkpoint
+python3 ml/train_ppo.py --timesteps 500000 --resume models/srace_ppo.zip
+
+# Evaluate trained model (with per-step details)
+python3 ml/test_ppo.py --episodes 10 --render
+
+# Test specific occupancy scenarios
+python3 ml/test_ppo.py --scenario full --render     # all zones occupied
+python3 ml/test_ppo.py --scenario sparse --render    # 2-3 zones only
+python3 ml/test_ppo.py --scenario empty --render     # no occupants
+```
+
+### FastAPI Backend
+
+```bash
+# Start API server
+source venv/bin/activate
+uvicorn backend.api:app --reload --port 8000
+
+# Swagger UI: http://localhost:8000/docs
+# Endpoints:
+#   GET  /room_state      — physics + optimizer result
+#   POST /set_occupancy   — update zone occupancy
+#   GET  /config          — raw room configuration
+```
+
+### Unity Simulation
+
+1. Open the project in Unity (2022.3+ with URP)
+2. Drag `default_room.json` or `classroom_real.json` into `Assets/SRACE/Resources/`
+3. Add `SRACEManager` to an empty GameObject
+4. Press Play
+
+**Keyboard controls:**
+
+| Key | Action |
+|-----|--------|
+| `1` | Empty room (all off) |
+| `2` | Single person in zone 0 |
+| `3` | Center cluster (zones 5,6,9,10) |
+| `4` | Full room (4 per zone) |
+| `5` | Front row only |
+| `Space` | Re-run optimizer |
+| `F` | Toggle all fans |
+| `L` | Toggle all lights |
+
+**API mode:** Add `SRACEApiClient` component to enable Python backend polling.
+
+---
+
+## Test Scenarios
+
+| Scenario | Occupancy | Expected Behavior |
+|----------|-----------|-------------------|
+| Empty Room | 0 people | All appliances OFF, 0W |
+| Single Person | 1 in zone 0 | 1-2 fans + 1-2 lights near zone 0 |
+| Center Cluster | 11 in zones 5,6,9,10 | Center fans + lights only |
+| Full Room | 48 people (4/zone) | Most appliances ON, near max power |
+| Front Row Only | 20 in zones 0-3 | Front-row appliances only, back OFF |
+
+---
+
+## Key Design Decisions
+
+### Optimizer: Two-Phase Greedy
+
+The greedy optimizer runs fans and lights in **separate phases** instead of together.
+Without this, lights (40W) always beat fans (75W) on coverage-per-watt, causing the
+optimizer to never select fans — leaving rooms with zero airflow despite full
+lighting coverage.
+
+### PPO Reward Engineering
+
+The reward function uses a **5-term design** with a hard danger penalty. Early
+versions used only 4 terms (power α=0.3, comfort β=0.5, switching γ=0.1, air δ=0.1),
+which caused the agent to prefer lights over fans because:
+1. Power penalty was too dominant (fans cost more watts)
+2. Temperature comfort penalty was too gentle (`exp(-0.1·dev²)`)
+3. No punishment for unsafe conditions
+
+The fix: reduced power weight, steeper comfort curves (`exp(-0.3·dev²)`), and
+a new danger term (ε=0.5) for zones above 35°C or 1200 ppm CO₂.
+
+### Unity: Code-Generated Room
+
+The entire 3D room (floor, walls, ceiling, fans, lights, heatmap) is **generated
+from the JSON config at runtime** — no manual scene setup. Change the JSON config
+and the room rebuilds automatically.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Vision | YOLOv8, OpenCV ArUco, Samsung S23 Ultra |
-| Physics | NumPy, SciPy (`solve_ivp` RK45) |
-| Optimization | PuLP ILP (CBC), DEAP Genetic Algorithm |
-| ML | PyTorch, Stable-Baselines3 PPO, River |
-| Backend | FastAPI, Mosquitto MQTT, WebSocket |
-| Database | InfluxDB 2.0, Redis 7 |
-| Hardware | Raspberry Pi 4, 20 LEDs, breadboard |
-| Simulation | **Unreal Engine 5** (Lumen, Nanite, NavMesh) |
-| Dashboard | React, Recharts, Tailwind, Grafana |
+|-------|------------|
+| Physics | Python, NumPy, SciPy (`solve_ivp` RK45) |
+| Optimization | PuLP ILP (CBC solver) |
+| Machine Learning | PyTorch, Stable-Baselines3 PPO, Gymnasium |
+| Backend | FastAPI, Uvicorn |
+| 3D Simulation | Unity 2022.3+ (URP), C# |
+| Vision (planned) | YOLOv8, OpenCV ArUco |
+| Hardware (planned) | Raspberry Pi 4, 20 LEDs |
+| Dashboard (planned) | React, Recharts |
 
 ---
 
-## Repository Structure
+## Subject Mappings (Academic)
 
-### Week 1   Python Core (DONE)
-
-```
-srace-v2/
-├── config/
-│   └── default_room.json          # Room config: 10×8m classroom, 10 fans, 10 lights
-├── core/
-│   ├── room_config.py             # RoomConfig, Zone, Fan, Light, ComfortParams dataclasses
-│   └── coverage.py                # Binary coverage matrix from physics outputs
-├── physics/
-│   ├── airflow.py                 # Gaussian decay fan airflow model
-│   ├── thermal.py                 # Thermal ODE via Method of Lines + RK45
-│   ├── co2_model.py               # CO₂ mass-balance ODE
-│   └── lighting.py                # Cosine-law illuminance model
-├── optimizer/
-│   ├── greedy_solver.py           # Greedy weighted set cover (O(n log n))
-│   └── ilp_solver.py              # Exact ILP via PuLP CBC
-├── visualization/
-│   └── room_grid.py               # Matplotlib room grid visualization
-├── output/                        # Generated visualizations
-├── main.py                        # Pipeline: config → physics → coverage → optimizer → output
-└── requirements.txt               # numpy, scipy, pulp, matplotlib
-```
-
-### Planned Structure (Full System)
-
-```
-srace-v2/
-├── (above) ...
-├── ml/
-│   ├── gym_env.py                 # Custom Gymnasium environment
-│   ├── train_ppo.py               # PPO training script
-│   └── reward.py                  # Multi-objective reward function
-├── detection/
-│   ├── yolo_detector.py           # YOLOv8 real-time person detection
-│   ├── aruco_detector.py          # ArUco marker detection for demo
-│   └── zone_mapper.py             # Map detections to zone grid
-├── backend/
-│   ├── api.py                     # FastAPI gateway
-│   ├── mqtt_client.py             # MQTT publisher/subscriber
-│   └── ws_server.py               # WebSocket for dashboard
-├── hardware/
-│   ├── gpio_controller.py         # RPi GPIO LED control
-│   └── led_mapper.py              # Map appliance states to LED pins
-├── ue5/                           # Unreal Engine 5 project (separate repo)
-└── dashboard/                     # React dashboard (separate repo)
-```
+| Subject | SRACE Component |
+|---------|----------------|
+| **Computer Networks** | REST API, Unity ↔ Python polling, JSON protocol |
+| **Data Analysis & Algorithms** | Greedy O(n log n), ILP solver comparison, coverage analysis |
+| **Discrete Mathematics** | Weighted Set Cover (NP-hard), ILP binary variables, bipartite coverage graph |
+| **AI and ML** | PPO RL agent, custom Gymnasium env, multi-objective reward shaping |
 
 ---
 
-## Team Split
+## Team
 
 | Member | Owns |
 |--------|------|
-| **Bhavanish** | PPO agent, ILP + Greedy + GA optimizer, River anomaly detection, physics engine integration, MQTT backbone |
-| Person 2 | ArUco detector, YOLOv8 integration, zone mapper, GPIO controller, sensor scripts |
-| Person 3 | FastAPI gateway, WebSocket, InfluxDB, Redis, Docker |
-| Person 4 | React dashboard, UE5 simulation, Grafana |
-
----
-
-## Demo Setup
-
-```
-Demo table layout:
-  ┌─────────────────────────────────────────────────────────┐
-  │  Laptop 1          Laptop 2        RPi 4    S23 Ultra   │
-  │  (UE5 sim)         (Dashboard)     (LEDs)   (overhead)  │
-  │                                                         │
-  │                    ┌──────────┐                         │
-  │                    │ Cardboard│                         │
-  │                    │ Mini Room│                         │
-  │                    │ (ArUco   │                         │
-  │                    │ figurines│                         │
-  │                    └──────────┘                         │
-  └─────────────────────────────────────────────────────────┘
-```
-
-### Demo Flow
-1. **Empty room**   all LEDs off, UE5 dark, power = 0W
-2. **Place figurines** in zones → ArUco detects → optimizer runs
-3. **Specific LEDs light up** → UE5 fans spin, lights glow
-4. **Move figurines** → different LEDs respond in real time
-5. **Fill all zones** → power rises → all LEDs on
-6. **Remove everyone** → LEDs off → savings % displayed
-
----
-
-## Week 1 Plan
-
-### Python Track (Bhavanish's actual work)
-- [x] Day 1: Project setup, folder structure, Git repo
-- [x] Day 2: RoomConfig JSON loader
-- [x] Day 3: Physics engine (all 4 models)
-- [x] Day 4: Set Cover optimizer (Greedy + ILP)
-- [x] Day 5: Wire everything in main.py, print results
-- [x] Day 6: Matplotlib room grid visualization
-
-### UE5 Track (impress mentor)
-- [ ] Day 1–2: Room scene from Fab.com assets
-- [ ] Day 3: Fan rotation + Lumen lighting
-- [ ] Day 4: Blueprint logic, zone heatmap
-- [ ] Day 5: SRACE HUD widget
-- [ ] Day 6: Fake demo sequence Blueprint
-- [ ] Day 7: Record cinematic with Sequencer
-
-### Show Mentor Strategy
-1. UE5 demo video first (wow factor)
-2. Python terminal output second (technical depth)
-3. GitHub repo with clean commits
+| **Bhavanish** | Physics engine, ILP + Greedy optimizer, PPO RL agent, reward engineering, FastAPI backend, Unity integration |
+| Person 2 | ArUco detector, YOLOv8 integration, zone mapper, GPIO controller |
+| Person 3 | FastAPI gateway extensions, WebSocket, InfluxDB, Redis, Docker |
+| Person 4 | React dashboard, Grafana, UE5 assets |
 
 ---
 
 ## What Makes This Project Stand Out
 
-1. **Generalised**   any room via JSON config, not a one-off hack
-2. **Multi-domain**   CV + RL + combinatorics + physics + IoT + distributed systems
-3. **Mathematically rigorous**   ILP gives provably optimal solution
-4. **Physically accurate**   PDEs and ODEs, not just thresholds
-5. **Production grade**   MQTT, InfluxDB, Redis, WebSocket, Docker
-6. **Visually stunning**   UE5 Lumen photorealistic simulation
-7. **Publication worthy**   zero-shot PPO generalisation across room types is a genuine research contribution
-
----
-
-## Key Concepts
-
-- **PPO**   RL algorithm that learns optimal appliance policy through 2M simulated room interactions, using clipped policy updates for stable training
-- **ILP**   Mathematical optimization that finds exact minimum power appliance combination using Branch and Bound, solved in milliseconds via PuLP CBC
-- **Set Cover**   NP-hard combinatorial problem: minimum cost subset of appliances covering all occupied zones
-- **River**   Online streaming ML, learns anomaly patterns live without batch retraining
-- **MQTT**   Lightweight IoT pub/sub protocol, QoS1 guaranteed delivery, hierarchical topic tree
-- **Lumen**   UE5 real-time global illumination, photorealistic lighting with zero shader code
-
----
-
-## Running
-
-```bash
-# Install dependencies
-pip install numpy scipy pulp matplotlib
-
-# Run full pipeline with all test scenarios
-python main.py
-
-# Output: terminal results + visualizations in ./output/
-```
-
-### Test Scenarios (built-in)
-| Scenario | Occupancy |
-|----------|-----------|
-| Empty Room | No one |
-| Single Person (Zone 0) | 1 person in zone 0 |
-| Cluster (Center) | 11 people in zones 5,6,9,10 |
-| Full Room | 48 people, 4 per zone |
-| Front Row Only | 20 people in zones 0–3 |
+1. **Generalised** — any room via JSON config, not a one-off hack
+2. **Multi-domain** — CV + RL + combinatorics + physics + IoT + distributed systems
+3. **Mathematically rigorous** — ILP gives provably optimal solution
+4. **Physically accurate** — ODEs and PDEs, not just thresholds
+5. **Dual optimizer** — Greedy for real-time + ILP for verification
+6. **RL with reward engineering** — 5-term reward with danger penalties
+7. **Full-stack** — Python physics → REST API → Unity 3D simulation
