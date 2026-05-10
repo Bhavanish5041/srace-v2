@@ -1,4 +1,4 @@
-# SRACE v2 — Smart Room Automation & Control Engine
+# SRACE v2 - Smart Room Automation & Control Engine
 
 > Generalised intelligent room automation platform that works for **any room** —
 > classroom, office, staff room, auditorium — controlled via a single JSON config file.
@@ -8,9 +8,9 @@
 
 ## The Problem
 
-Institutional buildings waste **40–70% electricity** running all fans and lights
+Institutional buildings waste **40% electricity** running all fans and lights
 regardless of how many people are present or where they sit. Existing systems use
-dumb binary thresholds — everything on or everything off.
+dumb binary thresholds - everything on or everything off.
 
 SRACE fixes this with **real intelligence**: physics-based models, mathematical
 optimization, and reinforcement learning to run only the appliances that matter.
@@ -343,10 +343,10 @@ and the room rebuilds automatically.
 
 ## What Makes This Project Stand Out
 
-1. **Generalised** — any room via JSON config, not a one-off hack
-2. **Multi-domain** — CV + RL + combinatorics + physics + IoT + distributed systems
-3. **Mathematically rigorous** — ILP gives provably optimal solution
-4. **Physically accurate** — ODEs and PDEs, not just thresholds
+1. **Generalised** - any room via JSON config, not a one-off hack
+2. **Multi-domain** - CV + RL + combinatorics + physics + IoT + distributed systems
+3. **Mathematically rigorous** - ILP gives provably optimal solution
+4. **Physically accurate** - ODEs and PDEs, not just thresholds
 5. **Dual optimizer** — Greedy for real-time + ILP for verification
 6. **RL with reward engineering** — 5-term reward with danger penalties
 7. **Full-stack** — Python physics → REST API → Unity 3D simulation
