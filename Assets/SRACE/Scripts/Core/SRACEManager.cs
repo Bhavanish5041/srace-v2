@@ -34,6 +34,7 @@ namespace SRACE.Core
         private LightObject[] lightObjects;
         private ZoneHeatmap heatmap;
         private ClassroomCamera orbitCamera;
+        private PowerHUD powerHUD;
 
         private int[] currentOccupancy;
         private bool[] activeFans;
@@ -58,6 +59,7 @@ namespace SRACE.Core
             SetupHeatmap();
             SetupCamera();
             InitializeState();
+            SetupHUD();
 
             config.PrintSummary();
             Debug.Log("SRACE Manager initialized. Press [1–5] for occupancy presets, [Space] to run optimizer.");
@@ -186,6 +188,42 @@ namespace SRACE.Core
             activeFans = new bool[config.NFans];
             activeLights = new bool[config.NLights];
         }
+
+        private void SetupHUD()
+        {
+            var hudGO = new GameObject("PowerHUD");
+            hudGO.transform.SetParent(roomRoot.transform);
+            powerHUD = hudGO.AddComponent<PowerHUD>();
+
+            float maxW = 0f;
+            for (int i = 0; i < config.NFans; i++) maxW += config.fans[i].powerWatts;
+            for (int i = 0; i < config.NLights; i++) maxW += config.lights[i].powerWatts;
+            powerHUD.UpdateStats(0f, maxW, 100f, 0, 0, config.NFans, config.NLights, 0, "⏳ Ready");
+        }
+
+        private void UpdateHUD(string scenario = null)
+        {
+            if (powerHUD == null) return;
+
+            float totalPower = 0f;
+            int fOn = 0, lOn = 0, people = 0;
+            for (int i = 0; i < activeFans.Length; i++)
+                if (activeFans[i]) { fOn++; totalPower += config.fans[i].powerWatts; }
+            for (int i = 0; i < activeLights.Length; i++)
+                if (activeLights[i]) { lOn++; totalPower += config.lights[i].powerWatts; }
+            for (int i = 0; i < currentOccupancy.Length; i++)
+                people += currentOccupancy[i];
+
+            float maxW = 0f;
+            for (int i = 0; i < config.NFans; i++) maxW += config.fans[i].powerWatts;
+            for (int i = 0; i < config.NLights; i++) maxW += config.lights[i].powerWatts;
+            float saved = maxW > 0 ? (1f - totalPower / maxW) * 100f : 100f;
+
+            powerHUD.UpdateStats(totalPower, maxW, saved, fOn, lOn,
+                config.NFans, config.NLights, people, scenario ?? scenarioLabel);
+        }
+
+        private string scenarioLabel = "⏳ Ready";
 
         // ══════════════════════════════════════════
         //  PHYSICS + OPTIMIZER
@@ -350,6 +388,8 @@ namespace SRACE.Core
                 fanObjects[i].SetActive(activeFans[i]);
             for (int i = 0; i < lightObjects.Length; i++)
                 lightObjects[i].SetActive(activeLights[i]);
+
+            UpdateHUD();
         }
 
         // ══════════════════════════════════════════
@@ -395,6 +435,8 @@ namespace SRACE.Core
             Debug.Log($"🌐 API → Power: {totalPowerW:F0}W  |  Saved: {powerSavedPct:F1}%  |  " +
                       $"Fans: {CountTrue(activeFans)}/{activeFans.Length}  " +
                       $"Lights: {CountTrue(activeLights)}/{activeLights.Length}");
+
+            UpdateHUD("🌐 API Mode");
         }
 
         private static int CountTrue(bool[] arr)
@@ -481,6 +523,7 @@ namespace SRACE.Core
         private void SetOccupancy(string scenarioName, int[] occupancy)
         {
             currentOccupancy = occupancy;
+            scenarioLabel = scenarioName;
             Debug.Log($"━━━ Scenario: {scenarioName} ━━━");
 
             // Also notify the Python backend if the API client is present

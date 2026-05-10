@@ -86,19 +86,31 @@ def calculate_reward(
     max_power = appliance_watts.sum()
     normalised_power = total_power / max_power if max_power > 0 else 0.0
 
+    # Adaptive alpha: double energy penalty for nearly-empty rooms (<30% occupied)
+    occupied_mask = zone_people > 0
+    n_occupied = occupied_mask.sum()
+    occupancy_ratio = n_occupied / n_zones if n_zones > 0 else 0.0
+    effective_alpha = alpha * 2.0 if occupancy_ratio < 0.3 and n_occupied > 0 else alpha
+
     # ═══════════════════════════════════════════════════════════════
     # Term 2: Comfort score  (higher is better)
     # Measures how well occupied zones are served by active appliances
     # ═══════════════════════════════════════════════════════════════
-    occupied_mask = zone_people > 0
-    n_occupied = occupied_mask.sum()
+
 
     # Will also track danger penalty
     danger_penalty = 0.0
 
     if n_occupied == 0:
-        # No one in the room — perfect comfort if everything is off
-        comfort_score = 1.0 if total_power == 0 else 0.0
+        # ── EMPTY ROOM: hard early-return ──
+        # Running appliances with nobody present is pure waste.
+        n_active = appliance_states.sum()
+        if n_active == 0:
+            # Perfect: everything off, nobody here → strong positive
+            return 0.5
+        else:
+            # Penalise proportionally: -0.5 per active appliance
+            return -0.5 * float(n_active)
     else:
         # Coverage check: are occupied zones covered by active appliances?
         active_coverage = coverage_matrix[appliance_states.astype(bool)]
@@ -201,7 +213,7 @@ def calculate_reward(
     # Final reward
     # ═══════════════════════════════════════════════════════════════
     reward = (
-        -alpha * normalised_power
+        -effective_alpha * normalised_power
         + beta * comfort_score
         - gamma * switching_penalty
         + delta * air_quality_bonus

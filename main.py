@@ -21,6 +21,7 @@ from physics.co2_model import simulate_co2
 from physics.lighting import compute_lux_matrix
 from optimizer.greedy_solver import solve_greedy
 from optimizer.ilp_solver import solve_ilp
+from optimizer.ga_solver import solve_ga
 from visualization.room_grid import render_room_state
 
 
@@ -87,21 +88,28 @@ def run_scenario(cfg, scenario_name, scenario_zones, airflow_mat, lux_mat,
     ilp = solve_ilp(coverage)
     t_ilp = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
+    ga = solve_ga(coverage, pop_size=50, n_generations=80, verbose=False)
+    t_ga = time.perf_counter() - t0
+
     max_watts = sum(a.power_watts for a in cfg.all_appliances)
 
     # ── Results ──
-    print(f"\n  {'':>12s} {'Greedy':>12s} {'ILP (Optimal)':>14s}")
-    print(f"  {'─'*42}")
-    print(f"  {'Appliances':>12s} {len(greedy['selected']):>12d} {len(ilp['selected']):>14d}")
-    print(f"  {'Power (W)':>12s} {greedy['total_watts']:>12.0f} {ilp['total_watts']:>14.0f}")
+    print(f"\n  {'':>12s} {'Greedy':>12s} {'ILP (Optimal)':>14s} {'GA (Evolve)':>14s}")
+    print(f"  {'─'*56}")
+    print(f"  {'Appliances':>12s} {len(greedy['selected']):>12d} {len(ilp['selected']):>14d} {len(ga['selected']):>14d}")
+    print(f"  {'Power (W)':>12s} {greedy['total_watts']:>12.0f} {ilp['total_watts']:>14.0f} {ga['total_watts']:>14.0f}")
     greedy_sav = (1 - greedy['total_watts'] / max_watts) * 100
     ilp_sav = (1 - ilp['total_watts'] / max_watts) * 100
-    print(f"  {'Savings':>12s} {greedy_sav:>11.1f}% {ilp_sav:>13.1f}%")
-    print(f"  {'Solve (ms)':>12s} {t_greedy*1000:>12.2f} {t_ilp*1000:>14.2f}")
-    print(f"  {'Zones hit':>12s} {len(greedy['zones_covered']):>12d} {len(ilp['zones_covered']):>14d}")
+    ga_sav = (1 - ga['total_watts'] / max_watts) * 100
+    print(f"  {'Savings':>12s} {greedy_sav:>11.1f}% {ilp_sav:>13.1f}% {ga_sav:>13.1f}%")
+    print(f"  {'Solve (ms)':>12s} {t_greedy*1000:>12.2f} {t_ilp*1000:>14.2f} {t_ga*1000:>14.2f}")
+    print(f"  {'Zones hit':>12s} {len(greedy['zones_covered']):>12d} {len(ilp['zones_covered']):>14d} {len(ga['zones_covered']):>14d}")
+    print(f"  {'Generations':>12s} {'—':>12s} {'—':>14s} {ga['generations']:>14d}")
 
     print(f"\n  Greedy ON : {', '.join(greedy['selected']) or 'none'}")
     print(f"  ILP ON    : {', '.join(ilp['selected']) or 'none'}")
+    print(f"  GA ON     : {', '.join(ga['selected']) or 'none'}")
 
     # Verify ILP ≤ Greedy
     if ilp['total_watts'] <= greedy['total_watts']:
@@ -128,6 +136,7 @@ def main():
     print("\n" + "▓" * 60)
     print("  SRACE v2 — Smart Room Automation & Control Engine")
     print("  Generalised room optimization via physics + set cover")
+    print("  Optimizers: Greedy (O(n log n)) | ILP (exact) | GA (evolutionary)")
     print("▓" * 60)
 
     # Load config
