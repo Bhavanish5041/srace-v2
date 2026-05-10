@@ -378,10 +378,10 @@ and the room rebuilds automatically.
 
 | Member | Owns |
 |--------|------|
-| **Bhavanish** | Physics engine, ILP + Greedy + GA optimizers, PPO RL agent, reward engineering, FastAPI backend, Unity integration, live dashboard |
-| Person 2 | ArUco detector, YOLOv8 integration, zone mapper, GPIO controller |
-| Person 3 | FastAPI gateway extensions, WebSocket, InfluxDB, Redis, Docker |
-| Person 4 | React dashboard, Grafana, UE5 assets |
+|  | Physics engine, ILP + Greedy + GA optimizers, PPO RL agent, reward engineering, FastAPI backend, Unity integration, live dashboard |
+|  | ArUco detector, YOLOv8 integration, zone mapper, GPIO controller |
+|  | FastAPI gateway extensions, WebSocket, InfluxDB, Redis, Docker |
+|  | React dashboard, Grafana, UE5 assets |
 
 ---
 
