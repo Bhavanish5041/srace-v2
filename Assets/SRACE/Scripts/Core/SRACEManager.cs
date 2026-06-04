@@ -1,5 +1,5 @@
 // SRACEManager.cs — Main orchestrator MonoBehaviour
-// Loads JSON config → builds room → spawns fans/lights → runs physics → updates visuals.
+// Loads JSON config → builds room → spawns fans/lights/projectors → runs physics → updates visuals.
 //
 // Modes:
 //   Local  — C# physics + greedy (keyboard presets 1-5, Space)
@@ -9,7 +9,7 @@
 //   [1] Empty room        [2] Single person (Z0)    [3] Center cluster
 //   [4] Full room          [5] Front row only
 //   [Space] Re-run optimizer and update visuals
-//   [F] Toggle all fans    [L] Toggle all lights
+//   [F] Toggle all fans    [L] Toggle all lights    [P] Toggle all projectors
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -32,6 +32,7 @@ namespace SRACE.Core
         private GameObject roomRoot;
         private FanObject[] fanObjects;
         private LightObject[] lightObjects;
+        private ProjectorObject[] projectorObjects;
         private ZoneHeatmap heatmap;
         private ClassroomCamera orbitCamera;
         private PowerHUD powerHUD;
@@ -39,11 +40,20 @@ namespace SRACE.Core
         private int[] currentOccupancy;
         private bool[] activeFans;
         private bool[] activeLights;
+        private bool[] activeProjectors;
+
+        // ── Persistent environment state (ticked each frame) ──
+        private float[] zoneTemps;
+        private float[] zoneCO2;
+        private float[] zoneLux;
+        private float[,] airflowMatrixCache; // static — only recomputed on config change
+        private float[,] luxMatrixCache;     // static
 
         // ── Public accessors for API client ──
         public RoomConfig Config => config;
         public FanObject[] FanObjects => fanObjects;
         public LightObject[] LightObjects => lightObjects;
+        public ProjectorObject[] ProjectorObjects => projectorObjects;
         public ZoneHeatmap Heatmap => heatmap;
 
         // ══════════════════════════════════════════
@@ -56,9 +66,11 @@ namespace SRACE.Core
             BuildRoom();
             SpawnFans();
             SpawnLights();
+            SpawnProjectors();
             SetupHeatmap();
             SetupCamera();
             InitializeState();
+            PrecomputeStaticPhysics();
             SetupHUD();
 
             config.PrintSummary();
@@ -68,6 +80,7 @@ namespace SRACE.Core
         private void Update()
         {
             HandleInput();
+            TickEnvironmentPhysics();
         }
 
         // ══════════════════════════════════════════
@@ -152,6 +165,31 @@ namespace SRACE.Core
             }
         }
 
+        private void SpawnProjectors()
+        {
+            projectorObjects = new ProjectorObject[config.NProjectors];
+
+            if (config.NProjectors == 0) return;
+
+            var projRoot = new GameObject("Projectors");
+            projRoot.transform.SetParent(roomRoot.transform);
+
+            for (int i = 0; i < config.NProjectors; i++)
+            {
+                var proj = config.projectors[i];
+                var projGO = new GameObject($"Projector_{proj.id}");
+                projGO.transform.SetParent(projRoot.transform);
+
+                // JSON x,y → Unity x,z. Projector mounts at its specified height.
+                projGO.transform.localPosition = new Vector3(
+                    proj.x, proj.heightAboveFloor, proj.y);
+
+                var projObj = projGO.AddComponent<ProjectorObject>();
+                projObj.BuildGeometry(proj.id, proj.screenLux, proj.coverageRadius);
+                projectorObjects[i] = projObj;
+            }
+        }
+
         private void SetupHeatmap()
         {
             var heatmapGO = new GameObject("ZoneHeatmap");
@@ -187,6 +225,56 @@ namespace SRACE.Core
             currentOccupancy = new int[config.NZones];
             activeFans = new bool[config.NFans];
             activeLights = new bool[config.NLights];
+            activeProjectors = new bool[config.NProjectors];
+
+            // Initialize persistent environment state
+            zoneTemps = new float[config.NZones];
+            zoneCO2 = new float[config.NZones];
+            zoneLux = new float[config.NZones];
+            for (int i = 0; i < config.NZones; i++)
+            {
+                zoneTemps[i] = config.ambientTemp;
+                zoneCO2[i] = config.ambientCO2;
+                zoneLux[i] = config.ambientLux;
+            }
+        }
+
+        /// <summary>
+        /// Pre-compute airflow and lux matrices (static — only depend on room layout).
+        /// </summary>
+        private void PrecomputeStaticPhysics()
+        {
+            airflowMatrixCache = AirflowModel.ComputeAirflowMatrix(config);
+            luxMatrixCache = LightingModel.ComputeLuxMatrix(config);
+            Debug.Log($"✓ Static physics: airflow({config.NFans}×{config.NZones}), lux({config.NLights}×{config.NZones})");
+        }
+
+        /// <summary>
+        /// Run simplified physics every frame for live temp/CO₂/lux tracking.
+        /// Uses QuickTick methods (same as PPO gym_env) for speed.
+        /// </summary>
+        private void TickEnvironmentPhysics()
+        {
+            // Compute total airflow from active fans
+            float[] airflowPerZone = AirflowModel.TotalAirflowPerZone(airflowMatrixCache, activeFans);
+
+            // Update temperature
+            ThermalModel.QuickTick(zoneTemps, airflowPerZone, currentOccupancy,
+                config.comfort.targetTempC, config.ambientTemp);
+
+            // Update CO₂
+            CO2Model.QuickTick(zoneCO2, airflowPerZone, currentOccupancy, config.ambientCO2);
+
+            // Update lux
+            bool anyLightsOn = false;
+            foreach (var l in activeLights) if (l) { anyLightsOn = true; break; }
+            if (anyLightsOn)
+                zoneLux = LightingModel.TotalLuxPerZone(luxMatrixCache, activeLights, config.ambientLux);
+            else
+                for (int i = 0; i < zoneLux.Length; i++) zoneLux[i] = config.ambientLux;
+
+            // Update HUD with live data
+            UpdateHUD();
         }
 
         private void SetupHUD()
@@ -195,10 +283,10 @@ namespace SRACE.Core
             hudGO.transform.SetParent(roomRoot.transform);
             powerHUD = hudGO.AddComponent<PowerHUD>();
 
-            float maxW = 0f;
-            for (int i = 0; i < config.NFans; i++) maxW += config.fans[i].powerWatts;
-            for (int i = 0; i < config.NLights; i++) maxW += config.lights[i].powerWatts;
-            powerHUD.UpdateStats(0f, maxW, 100f, 0, 0, config.NFans, config.NLights, 0, "⏳ Ready");
+            float maxW = config.MaxPowerWatts;
+            powerHUD.UpdateStats(0f, maxW, 100f, 0, 0, 0,
+                config.NFans, config.NLights, config.NProjectors, 0,
+                config.ambientTemp, config.ambientCO2, "⏳ Ready");
         }
 
         private void UpdateHUD(string scenario = null)
@@ -206,21 +294,32 @@ namespace SRACE.Core
             if (powerHUD == null) return;
 
             float totalPower = 0f;
-            int fOn = 0, lOn = 0, people = 0;
+            int fOn = 0, lOn = 0, pOn = 0, people = 0;
             for (int i = 0; i < activeFans.Length; i++)
                 if (activeFans[i]) { fOn++; totalPower += config.fans[i].powerWatts; }
             for (int i = 0; i < activeLights.Length; i++)
                 if (activeLights[i]) { lOn++; totalPower += config.lights[i].powerWatts; }
+            for (int i = 0; i < activeProjectors.Length; i++)
+                if (activeProjectors[i]) { pOn++; totalPower += config.projectors[i].powerWatts; }
             for (int i = 0; i < currentOccupancy.Length; i++)
                 people += currentOccupancy[i];
 
-            float maxW = 0f;
-            for (int i = 0; i < config.NFans; i++) maxW += config.fans[i].powerWatts;
-            for (int i = 0; i < config.NLights; i++) maxW += config.lights[i].powerWatts;
+            float maxW = config.MaxPowerWatts;
             float saved = maxW > 0 ? (1f - totalPower / maxW) * 100f : 100f;
 
-            powerHUD.UpdateStats(totalPower, maxW, saved, fOn, lOn,
-                config.NFans, config.NLights, people, scenario ?? scenarioLabel);
+            // Compute average temp and CO₂ from live zone state
+            float avgTemp = 0f, avgCO2 = 0f;
+            for (int i = 0; i < config.NZones; i++)
+            {
+                avgTemp += zoneTemps[i];
+                avgCO2 += zoneCO2[i];
+            }
+            avgTemp /= config.NZones;
+            avgCO2 /= config.NZones;
+
+            powerHUD.UpdateStats(totalPower, maxW, saved, fOn, lOn, pOn,
+                config.NFans, config.NLights, config.NProjectors, people,
+                avgTemp, avgCO2, scenario ?? scenarioLabel);
         }
 
         private string scenarioLabel = "⏳ Ready";
@@ -231,31 +330,20 @@ namespace SRACE.Core
 
         private void RunPipelineAndUpdateVisuals()
         {
-            // 1. Compute physics matrices
-            var airflowMatrix = AirflowModel.ComputeAirflowMatrix(config);
-            var luxMatrix = LightingModel.ComputeLuxMatrix(config);
+            // 1. Use cached static physics matrices
+            var airflowMatrix = airflowMatrixCache;
+            var luxMatrix = luxMatrixCache;
 
-            // Estimate thermal impact from airflow (analytical, no ODE solver needed)
-            // ΔT ≈ convCoeff × airflow × (T_ambient − T_target) × forecastTime
-            // This approximates the marginal cooling each fan provides.
-            const float convCoeff = 0.15f;    // convection coefficient (matches Python)
-            const float forecastSec = 300f;   // 5-minute forecast window
-            float tempDelta = config.ambientTemp - config.comfort.targetTempC;
-            var thermalImpact = new float[config.NFans, config.NZones];
-            var co2Reduction = new float[config.NFans, config.NZones];
-            for (int fi = 0; fi < config.NFans; fi++)
-            {
-                for (int zi = 0; zi < config.NZones; zi++)
-                {
-                    // Thermal: cooling proportional to airflow and temperature difference
-                    thermalImpact[fi, zi] = convCoeff * airflowMatrix[fi, zi]
-                                            * Mathf.Max(tempDelta, 0f) * forecastSec * 0.01f;
-                    // CO₂: ventilation proportional to airflow
-                    co2Reduction[fi, zi] = airflowMatrix[fi, zi] * 50f; // rough ppm reduction
-                }
-            }
+            // 2. Run full RK4 ODE thermal + CO₂ simulations for accurate marginal analysis
+            var thermalImpact = ThermalModel.SimulateThermal(
+                config, airflowMatrix, currentOccupancy, zoneTemps);
+            var co2Reduction = CO2Model.SimulateCO2(
+                config, airflowMatrix, currentOccupancy, zoneCO2);
 
-            // 2. Find occupied zones
+            Debug.Log($"🌡 Thermal ODE: peak ΔT = {MaxValue(thermalImpact):F2}°C  |  " +
+                      $"🌬 CO₂ ODE: peak ΔC = {MaxValue(co2Reduction):F0} ppm");
+
+            // 3. Find occupied zones
             var occupiedZones = new HashSet<int>();
             for (int i = 0; i < config.NZones; i++)
             {
@@ -263,7 +351,7 @@ namespace SRACE.Core
                     occupiedZones.Add(i);
             }
 
-            // 3. Build coverage result
+            // 4. Build coverage result
             coverage = new CoverageResult(config, airflowMatrix, thermalImpact,
                                           co2Reduction, luxMatrix, occupiedZones);
             coverage.PrintSummary();
@@ -279,7 +367,14 @@ namespace SRACE.Core
                 if (!occupiedZones.Contains(zi)) continue;
                 for (int ai = 0; ai < config.NAppliances; ai++)
                 {
-                    bool applianceOn = ai < config.NFans ? activeFans[ai] : activeLights[ai - config.NFans];
+                    bool applianceOn;
+                    if (ai < config.NFans)
+                        applianceOn = activeFans[ai];
+                    else if (ai < config.NFans + config.NLights)
+                        applianceOn = activeLights[ai - config.NFans];
+                    else
+                        applianceOn = activeProjectors[ai - config.NFans - config.NLights];
+
                     if (applianceOn && coverage.Binary[ai, zi] == 1)
                     {
                         coveredZones[zi] = true;
@@ -289,31 +384,50 @@ namespace SRACE.Core
             }
             heatmap.UpdateHeatmap(currentOccupancy, coveredZones);
 
-            // 6. Log power usage
+            // 7. Log power and environment state
             float totalPower = 0;
             for (int i = 0; i < config.NFans; i++)
                 if (activeFans[i]) totalPower += config.fans[i].powerWatts;
             for (int i = 0; i < config.NLights; i++)
                 if (activeLights[i]) totalPower += config.lights[i].powerWatts;
+            for (int i = 0; i < config.NProjectors; i++)
+                if (activeProjectors[i]) totalPower += config.projectors[i].powerWatts;
 
             float savings = config.MaxPowerWatts > 0
                 ? (1f - totalPower / config.MaxPowerWatts) * 100f : 0f;
 
+            float avgT = 0f, avgC = 0f;
+            for (int i = 0; i < config.NZones; i++) { avgT += zoneTemps[i]; avgC += zoneCO2[i]; }
+            avgT /= config.NZones; avgC /= config.NZones;
+
             Debug.Log($"⚡ Power: {totalPower:F0}W / {config.MaxPowerWatts:F0}W  " +
-                      $"({savings:F1}% savings)  |  Occupied zones: {occupiedZones.Count}/{config.NZones}");
+                      $"({savings:F1}% savings)  |  Zones: {occupiedZones.Count}/{config.NZones}  " +
+                      $"Temp: {avgT:F1}°C  CO₂: {avgC:F0}ppm");
+        }
+
+        /// <summary>Helper: find max value in a 2D array.</summary>
+        private static float MaxValue(float[,] arr)
+        {
+            float max = float.MinValue;
+            int r = arr.GetLength(0), c = arr.GetLength(1);
+            for (int i = 0; i < r; i++)
+                for (int j = 0; j < c; j++)
+                    if (arr[i, j] > max) max = arr[i, j];
+            return max;
         }
 
         /// <summary>
-        /// Greedy activation with SEPARATE phases for fans and lights.
-        /// Fans cover airflow/thermal needs, lights cover illumination.
-        /// Running them together causes lights (cheaper per watt) to "steal"
-        /// coverage from fans, leaving occupied zones with zero airflow.
+        /// Greedy activation with SEPARATE phases for fans, lights, and projectors.
+        /// Fans cover airflow/thermal needs, lights cover illumination,
+        /// projectors cover additional lux in their coverage radius.
+        /// Running them together causes cheaper appliances to "steal" coverage.
         /// </summary>
         private void GreedyActivate(HashSet<int> occupiedZones)
         {
             // Reset all
             for (int i = 0; i < activeFans.Length; i++) activeFans[i] = false;
             for (int i = 0; i < activeLights.Length; i++) activeLights[i] = false;
+            for (int i = 0; i < activeProjectors.Length; i++) activeProjectors[i] = false;
 
             if (occupiedZones.Count == 0)
             {
@@ -321,11 +435,19 @@ namespace SRACE.Core
                 return;
             }
 
+            int fanEnd = config.NFans;
+            int lightEnd = config.NFans + config.NLights;
+            int projEnd = config.NAppliances;
+
             // Phase 1: Greedy over FANS only (airflow coverage)
-            GreedySubset(occupiedZones, 0, config.NFans);
+            GreedySubset(occupiedZones, 0, fanEnd);
 
             // Phase 2: Greedy over LIGHTS only (illumination coverage)
-            GreedySubset(occupiedZones, config.NFans, config.NAppliances);
+            GreedySubset(occupiedZones, fanEnd, lightEnd);
+
+            // Phase 3: Greedy over PROJECTORS only (additional lux coverage)
+            if (config.NProjectors > 0)
+                GreedySubset(occupiedZones, lightEnd, projEnd);
 
             ApplyApplianceStates();
         }
@@ -344,7 +466,14 @@ namespace SRACE.Core
 
                 for (int ai = startIdx; ai < endIdx; ai++)
                 {
-                    bool alreadyOn = ai < config.NFans ? activeFans[ai] : activeLights[ai - config.NFans];
+                    bool alreadyOn;
+                    if (ai < config.NFans)
+                        alreadyOn = activeFans[ai];
+                    else if (ai < config.NFans + config.NLights)
+                        alreadyOn = activeLights[ai - config.NFans];
+                    else
+                        alreadyOn = activeProjectors[ai - config.NFans - config.NLights];
+
                     if (alreadyOn) continue;
 
                     int coversCount = 0;
@@ -370,8 +499,10 @@ namespace SRACE.Core
                 // Activate best appliance
                 if (bestApp < config.NFans)
                     activeFans[bestApp] = true;
-                else
+                else if (bestApp < config.NFans + config.NLights)
                     activeLights[bestApp - config.NFans] = true;
+                else
+                    activeProjectors[bestApp - config.NFans - config.NLights] = true;
 
                 // Remove newly covered zones
                 for (int zi = 0; zi < config.NZones; zi++)
@@ -388,6 +519,8 @@ namespace SRACE.Core
                 fanObjects[i].SetActive(activeFans[i]);
             for (int i = 0; i < lightObjects.Length; i++)
                 lightObjects[i].SetActive(activeLights[i]);
+            for (int i = 0; i < projectorObjects.Length; i++)
+                projectorObjects[i].SetActive(activeProjectors[i]);
 
             UpdateHUD();
         }
@@ -404,6 +537,7 @@ namespace SRACE.Core
             int[] occupancy,
             bool[] fanStates,
             bool[] lightStates,
+            bool[] projectorStates,
             bool[] coveredZones,
             float totalPowerW,
             float powerSavedPct)
@@ -428,13 +562,22 @@ namespace SRACE.Core
                     lightObjects[i].SetActive(activeLights[i]);
             }
 
+            // Update projectors
+            if (projectorStates != null && projectorStates.Length == projectorObjects.Length)
+            {
+                activeProjectors = projectorStates;
+                for (int i = 0; i < projectorObjects.Length; i++)
+                    projectorObjects[i].SetActive(activeProjectors[i]);
+            }
+
             // Update heatmap
             if (coveredZones != null && coveredZones.Length == config.NZones)
                 heatmap.UpdateHeatmap(currentOccupancy, coveredZones);
 
             Debug.Log($"🌐 API → Power: {totalPowerW:F0}W  |  Saved: {powerSavedPct:F1}%  |  " +
                       $"Fans: {CountTrue(activeFans)}/{activeFans.Length}  " +
-                      $"Lights: {CountTrue(activeLights)}/{activeLights.Length}");
+                      $"Lights: {CountTrue(activeLights)}/{activeLights.Length}  " +
+                      $"Projectors: {CountTrue(activeProjectors)}/{activeProjectors.Length}");
 
             UpdateHUD("🌐 API Mode");
         }
@@ -517,6 +660,20 @@ namespace SRACE.Core
                 for (int i = 0; i < activeLights.Length; i++) activeLights[i] = newState;
                 ApplyApplianceStates();
                 Debug.Log($"All lights {(newState ? "ON" : "OFF")}");
+            }
+
+            // Toggle all projectors
+            if (Input.GetKeyDown(KeyCode.P))
+            {
+                if (activeProjectors.Length > 0)
+                {
+                    bool anyOn = false;
+                    foreach (var p in activeProjectors) if (p) { anyOn = true; break; }
+                    bool newState = !anyOn;
+                    for (int i = 0; i < activeProjectors.Length; i++) activeProjectors[i] = newState;
+                    ApplyApplianceStates();
+                    Debug.Log($"All projectors {(newState ? "ON" : "OFF")}");
+                }
             }
         }
 

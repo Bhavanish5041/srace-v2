@@ -38,6 +38,9 @@ namespace SRACE.Core
         [Tooltip("Enable/disable API polling at runtime.")]
         public bool pollingEnabled = true;
 
+        [Tooltip("Use PPO RL agent instead of greedy optimizer. Toggle with [M] key.")]
+        public bool usePPO = false;
+
         private bool isPolling = false;
         private int successCount = 0;
         private int errorCount = 0;
@@ -60,8 +63,20 @@ namespace SRACE.Core
                 return;
             }
 
-            Debug.Log($"[SRACEApiClient] Starting — polling {apiBaseUrl}/room_state every {pollInterval}s");
+            Debug.Log($"[SRACEApiClient] Starting — polling {apiBaseUrl} every {pollInterval}s");
+            Debug.Log($"[SRACEApiClient] Solver: {(usePPO ? "PPO (RL Agent)" : "Greedy (Algorithm)")} — press [M] to toggle");
             StartCoroutine(PollLoop());
+        }
+
+        private void Update()
+        {
+            // [M] key toggles between Greedy and PPO solver
+            if (Input.GetKeyDown(KeyCode.M))
+            {
+                usePPO = !usePPO;
+                string mode = usePPO ? "🧠 PPO (RL Agent)" : "⚡ Greedy (Algorithm)";
+                Debug.Log($"[SRACEApiClient] Solver switched to: {mode}");
+            }
         }
 
         // ══════════════════════════════════════════
@@ -91,7 +106,8 @@ namespace SRACE.Core
         private IEnumerator FetchRoomState()
         {
             isPolling = true;
-            string url = $"{apiBaseUrl}/room_state";
+            string endpoint = usePPO ? "ppo_action" : "room_state";
+            string url = $"{apiBaseUrl}/{endpoint}";
 
             using (var request = UnityWebRequest.Get(url))
             {
@@ -106,7 +122,7 @@ namespace SRACE.Core
                     if (errorCount <= 3 || errorCount % 10 == 0)
                     {
                         Debug.LogWarning(
-                            $"[SRACEApiClient] GET /room_state failed ({errorCount}x): {request.error}\n" +
+                            $"[SRACEApiClient] GET /{endpoint} failed ({errorCount}x): {request.error}\n" +
                             $"  Is the backend running? → uvicorn backend.api:app --port 8000");
                     }
                 }
@@ -215,12 +231,15 @@ namespace SRACE.Core
             // ── Extract appliance states ──
             int nFans = config.NFans;
             int nLights = config.NLights;
+            int nProjectors = config.NProjectors;
             bool[] fanStates = new bool[nFans];
             bool[] lightStates = new bool[nLights];
+            bool[] projectorStates = new bool[nProjectors];
 
-            // Track fan/light indices separately
+            // Track fan/light/projector indices separately
             int fanIdx = 0;
             int lightIdx = 0;
+            int projIdx = 0;
 
             if (state.appliances != null)
             {
@@ -237,6 +256,11 @@ namespace SRACE.Core
                         lightStates[lightIdx] = app.active;
                         lightIdx++;
                     }
+                    else if (app.type == "projector" && projIdx < nProjectors)
+                    {
+                        projectorStates[projIdx] = app.active;
+                        projIdx++;
+                    }
                 }
             }
 
@@ -245,6 +269,7 @@ namespace SRACE.Core
                 occupancy,
                 fanStates,
                 lightStates,
+                projectorStates,
                 coveredZones,
                 state.total_power_watts,
                 state.power_saved_pct
@@ -317,10 +342,11 @@ namespace SRACE.Core
         /// <summary>Status string for debug UI / HUD.</summary>
         public string GetStatusText()
         {
-            if (!pollingEnabled) return "API: Disabled";
+            string solver = usePPO ? "PPO" : "Greedy";
+            if (!pollingEnabled) return $"API: Disabled ({solver})";
             if (errorCount > 0 && successCount == 0)
                 return $"API: Connecting... ({errorCount} errors)";
-            return $"API: Connected (poll #{successCount})";
+            return $"API: {solver} (poll #{successCount})";
         }
     }
 }

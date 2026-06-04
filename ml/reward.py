@@ -1,19 +1,22 @@
 """
 reward.py — Multi-objective reward function for SRACE PPO agent.
 
-Balances five objectives:
+Balances eight objectives:
   1. Power minimisation   (α = 0.15)  — use less energy
   2. Comfort maximisation (β = 0.55)  — temperature + CO₂ + lux
   3. Switching penalty     (γ = 0.05)  — don't oscillate appliances
-  4. Air quality bonus     (δ = 0.15)  — keep CO₂ low in occupied zones
+  4. Air quality bonus     (δ = 0.25)  — keep CO₂ low in occupied zones
   5. Danger penalty        (ε = 0.50)  — hard penalty for unsafe conditions
+  6. Stability bonus       (fixed 0.3) — reward maintaining good state
+  7. Consistency penalty   (ζ = 0.10)  — penalise erratic appliance count swings
 
-Reward = -α · power + β · comfort - γ · switching + δ · air_quality - ε · danger
+Reward = -α·power + β·comfort - γ·switching + δ·air_quality
+         - ε·danger + stability - ζ·consistency
 
 The comfort term is internally weighted:
-  40% temperature comfort  (most important — affects health)
-  30% CO₂ comfort          (ventilation — affects health)
-  15% coverage fraction    (appliance reach)
+  35% temperature comfort  (affects health)
+  40% CO₂ comfort          (ventilation — dominant signal)
+  10% coverage fraction    (appliance reach)
   15% lighting comfort     (lux in occupied zones)
 """
 
@@ -33,8 +36,9 @@ def calculate_reward(
     alpha: float = 0.15,
     beta: float = 0.55,
     gamma: float = 0.05,
-    delta: float = 0.15,
+    delta: float = 0.25,
     epsilon: float = 0.50,
+    zeta: float = 0.10,
 ) -> float:
     """
     Compute the RL reward for a given appliance configuration.
@@ -55,12 +59,14 @@ def calculate_reward(
         gamma: Weight for switching penalty.
         delta: Weight for air quality bonus.
         epsilon: Weight for danger penalty (hard penalty for unsafe conditions).
+        zeta: Weight for consistency penalty (appliance count swing).
 
     Returns:
         Single float reward value.
     """
     n_appliances = len(appliance_states)
     n_zones = len(zone_people)
+    stability_bonus = 0.0
 
     # --- Default appliance wattages (10 fans @ 75W + 10 lights @ 40W) ---
     if appliance_watts is None:
@@ -90,7 +96,7 @@ def calculate_reward(
     occupied_mask = zone_people > 0
     n_occupied = occupied_mask.sum()
     occupancy_ratio = n_occupied / n_zones if n_zones > 0 else 0.0
-    effective_alpha = alpha * 2.0 if occupancy_ratio < 0.3 and n_occupied > 0 else alpha
+    effective_alpha = alpha * 2.0 if occupancy_ratio < 0.15 and n_occupied > 0 else alpha
 
     # ═══════════════════════════════════════════════════════════════
     # Term 2: Comfort score  (higher is better)
@@ -139,8 +145,8 @@ def calculate_reward(
             danger_penalty += overheated  # fraction of zones in danger
 
         # ── CO₂ comfort ──
-        # Smooth score based on distance from max threshold.
-        # 1.0 at ambient (400 ppm), ~0.55 at threshold, 0.0 well above.
+        # Steeper curve so agent reacts before CO₂ reaches 600+ ppm.
+        # exp(-2.5 * norm²): ~0.38 at threshold, drops hard above.
         co2_comfort = 1.0
         if zone_co2 is not None:
             max_co2 = comfort_targets["max_co2"]
@@ -150,7 +156,7 @@ def calculate_reward(
             co2_norm = np.clip(
                 (occ_co2 - ambient_co2) / (max_co2 - ambient_co2), 0.0, 2.0
             )
-            co2_comfort = np.exp(-1.5 * co2_norm.mean() ** 2)
+            co2_comfort = np.exp(-2.5 * co2_norm.mean() ** 2)
 
             # Hard danger penalty: any occupied zone above 1.2× threshold
             bad_co2 = (occ_co2 > max_co2 * 1.2).mean()
@@ -164,11 +170,11 @@ def calculate_reward(
             # Fraction of occupied zones meeting lux target
             lux_comfort = (occ_lux >= target_lux * 0.7).mean()
 
-        # Weighted comfort: temperature and CO₂ dominate
+        # Weighted comfort: CO₂ is now the dominant signal
         comfort_score = (
-            0.40 * temp_comfort
-            + 0.30 * co2_comfort
-            + 0.15 * coverage_fraction
+            0.35 * temp_comfort
+            + 0.40 * co2_comfort
+            + 0.10 * coverage_fraction
             + 0.15 * lux_comfort
         )
 
@@ -178,6 +184,15 @@ def calculate_reward(
     # ═══════════════════════════════════════════════════════════════
     n_switches = np.abs(appliance_states - prev_appliance_states).sum()
     switching_penalty = n_switches / n_appliances  # normalised to [0, 1]
+
+    # ═══════════════════════════════════════════════════════════════
+    # Term 3b: Consistency penalty  (stable appliance count is better)
+    # Penalise large swings in total active count (e.g. 10→1→8→1)
+    # ═══════════════════════════════════════════════════════════════
+    prev_n_active = prev_appliance_states.sum()
+    curr_n_active = appliance_states.sum()
+    count_swing = abs(float(curr_n_active) - float(prev_n_active)) / n_appliances
+    consistency_penalty = count_swing ** 2  # quadratic — small diffs OK, big diffs hurt
 
     # ═══════════════════════════════════════════════════════════════
     # Term 4: Air quality bonus  (lower CO₂ in occupied zones is better)
@@ -210,6 +225,19 @@ def calculate_reward(
     danger_penalty = np.clip(danger_penalty / 2.0, 0.0, 1.0)  # avg of temp + co2
 
     # ═══════════════════════════════════════════════════════════════
+    # Term 6: Stability bonus — reward maintaining good state
+    # ═══════════════════════════════════════════════════════════════
+    total_occupancy = zone_people.sum()
+    if zone_temps is not None and zone_co2 is not None:
+        avg_temp = zone_temps[occupied_mask].mean() if n_occupied > 0 else zone_temps.mean()
+        avg_co2 = zone_co2[occupied_mask].mean() if n_occupied > 0 else zone_co2.mean()
+        target_temp = comfort_targets["target_temp"]
+        temp_stable = abs(avg_temp - target_temp) < 4.0
+        co2_stable = avg_co2 < 800
+        if temp_stable and co2_stable and total_occupancy > 0:
+            stability_bonus = 0.5
+
+    # ═══════════════════════════════════════════════════════════════
     # Final reward
     # ═══════════════════════════════════════════════════════════════
     reward = (
@@ -218,6 +246,8 @@ def calculate_reward(
         - gamma * switching_penalty
         + delta * air_quality_bonus
         - epsilon * danger_penalty
+        + stability_bonus
+        - zeta * consistency_penalty
     )
 
     return float(reward)

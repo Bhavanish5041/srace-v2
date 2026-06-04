@@ -36,9 +36,6 @@
     { "id": "L9",  "x": 2.70, "y": 6.33, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 },
     { "id": "L10", "x": 8.10, "y": 6.33, "power_watts": 40, "lumens": 3200, "height_above_floor": 2.86 }
   ],
-  "projectors": [
-    { "id": "P1", "x": 5.40, "y": 1.00, "power_watts": 150, "screen_lux": 200, "coverage_radius": 4.0, "height_above_floor": 2.50 }
-  ],
   "comfort": {
     "target_temp_c": 25.0,
     "target_lux": 300.0,

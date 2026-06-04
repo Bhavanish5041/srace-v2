@@ -13,7 +13,7 @@ Built the entire computational backend from scratch:
 | co2_model.py | CO2 mass-balance ODE | `dC/dt = (n*G)/V - lambda*(C-C_amb)` |
 | lighting.py | Cosine-law ceiling fixture model | `E = (Phi*cos^3(theta))/(2*pi*h^2)` |
 | coverage.py | Binary coverage matrix builder | `C[appliance][zone] = 1 if covers` |
-| greedy_solver.py | Greedy weighted set cover | O(n log n), two-phase (fans then lights) |
+| greedy_solver.py | Greedy weighted set cover | O(n log n), three-phase (fans → lights → projectors) |
 | ilp_solver.py | Exact ILP via PuLP CBC | `min sum(w_j * x_j) s.t. coverage >= 1` |
 | ga_solver.py | Genetic Algorithm optimizer | Tournament + crossover + mutation, 80 gens |
 | room_config.py | Generalised JSON config loader | Any room layout to dataclasses |
@@ -37,7 +37,7 @@ Ported the physics to C# and built a full 3D visualisation:
 | PowerHUD.cs | Live power meter overlay with animated bar, savings %, fan/light counts |
 | AirflowModel.cs | C# port of Gaussian airflow |
 | LightingModel.cs | C# port of cosine-law lux |
-| SRACEApiClient.cs | Unity to Python REST bridge (polls every 5s) |
+| SRACEApiClient.cs | Unity ↔ Python REST bridge (polls every 5s) |
 
 **Key point for mentor:** The entire 3D room is code-generated from JSON, no manual scene setup. Press 1-5 for occupancy presets and watch fans spin + lights glow in real time. The Power HUD shows live wattage and savings percentage.
 
@@ -48,15 +48,34 @@ Ported the physics to C# and built a full 3D visualisation:
 | Component | File | Status |
 |-----------|------|--------|
 | Gymnasium environment | gym_env.py | Custom env with simplified physics |
-| Reward function | reward.py | 5-term reward with empty room fix |
+| Reward function | reward.py | 7-term reward with empty room fix |
 | PPO training | train_ppo.py | SB3, EvalCallback, resume support |
 | PPO evaluation | test_ppo.py | Scenarios + cross-room generalisation |
-| FastAPI backend | api.py | 6 endpoints including PPO + compare |
+| PPO diagnostics | diagnose_ppo.py | 6-section model/env audit report |
+| FastAPI backend | api.py | 10+ endpoints including PPO + compare + anomaly |
 | Genetic Algorithm | ga_solver.py | Real evolutionary optimizer (not a stub) |
 | Live dashboard | dashboard.html | Browser-based real-time visualisation |
 | Visualization | visualize_results.py | PPO step-by-step + baseline charts |
-| Trained model | srace_ppo.zip | 2.5M timesteps |
-| Room configs | 3 configs | Classroom, office (6x5m), auditorium (15x10m) |
+| Trained model | srace_ppo.zip | Trained with projector awareness |
+| Room configs | 5 configs | Classroom (×2), office, auditorium, conference room |
+
+---
+
+### Week 4: Advanced Integration (Complete)
+
+| Component | File | What It Does |
+|-----------|------|--------------|
+| C# Thermal ODE | ThermalModel.cs | RK4 solver — 5-min forecast, marginal ΔT per fan |
+| C# CO₂ ODE | CO2Model.cs | RK4 solver — mass-balance, marginal ppm reduction per fan |
+| Projector support | RoomConfig.cs, CoverageMatrix.cs | 3rd appliance type with distance-based coverage |
+| Live env tracking | SRACEManager.cs | Per-frame QuickTick for temp/CO₂/lux |
+| Power+Env HUD | PowerHUD.cs | Temperature + CO₂ gauge bars with danger colors |
+| MQTT bridge | mqtt_bridge.py | Paho MQTT pub/sub — 6 topics, thread-safe, auto-reconnect |
+| Anomaly detection | anomaly_detector.py | River HalfSpaceTrees (streaming ML) + rule-based alerts |
+| PPO projectors | gym_env.py, coverage.py | Action/obs space expanded, projector lux physics |
+| Dashboard v2 | dashboard.html | Projector chips, MQTT badge, anomaly alerts |
+
+**Key point for mentor:** The C# physics now match Python exactly — both use ODE solvers instead of heuristic approximations. The Unity simulation runs real-time temperature and CO₂ evolution every frame, showing how fans affect the environment over time. MQTT enables future RPi integration without polling.
 
 ---
 
@@ -163,8 +182,8 @@ Show `python3 main.py` output. Explain:
 
 Show `python3 ml/test_ppo.py --scenario sparse --render`. Explain:
 - The agent observes: zone occupancy + temperatures + CO2 + lux + current appliance states
-- It decides: which of 20 appliances (10 fans + 10 lights) to turn on/off
-- **Reward = -power + comfort - switching + air_quality - danger**
+- It decides: which of 21 appliances (10 fans + 10 lights + 1 projector) to turn on/off
+- **Reward = -power + comfort - switching + air_quality - danger + stability + consistency**
 - Unlike greedy/ILP (static snapshot), the RL agent learns **temporal dynamics**: it knows turning fans on NOW prevents overheating later
 - Cross-room generalisation: trained on classroom, tested on office and auditorium
 
@@ -176,7 +195,9 @@ Open Unity, press Play:
 - Press `4` (full room): watch fans spin, lights glow, green heatmap, Power HUD shows wattage
 - Press `1` (empty): everything shuts off, HUD shows 100% saved
 - Press `3` (center cluster): only nearby appliances activate
-- Press `F` to toggle fans, `L` to toggle lights manually
+- Press `F` to toggle fans, `L` to toggle lights, `P` to toggle projectors
+- Press `M` to switch between Greedy and PPO solvers
+- Watch the temperature and CO₂ bars evolve in real-time on the HUD
 
 ### 5. Live Dashboard (1 minute)
 
@@ -252,18 +273,19 @@ Shows the model generalising to unseen rooms
 
 | Metric | Value |
 |--------|-------|
-| Room size | 10.8 x 7.6m, 12 zones (4x3 grid) |
-| Appliances | 10 fans (75W each) + 10 lights (40W each) = 1150W max |
-| Optimizers | 3 (Greedy, ILP, GA) |
+| Room size | 10.8 × 7.6m, 12 zones (4×3 grid) |
+| Appliances | 10 fans (75W) + 10 lights (40W) + 1 projector (150W) = 1300W max |
+| Optimizers | 3 (Greedy 3-phase, ILP, GA) |
 | Greedy savings | ~60-80% power saved vs all-on |
-| ILP savings | Provably optimal (>= greedy) |
-| PPO training | 2.5M steps, 4 parallel envs |
-| PPO sparse result | 26.4C, 490 ppm CO2, 493W (57% savings) |
-| PPO full result | 28.7C, 999 ppm CO2, 794W (31% savings) |
-| Physics models | 4 (airflow, thermal, CO2, lighting) |
-| Comfort targets | 25C, 300 lux, <1000 ppm CO2 |
-| Room configs | 3 (classroom, office, auditorium) |
-| API endpoints | 6 (room_state, set_occupancy, ppo_action, ppo_reset, compare, config) |
+| ILP savings | Provably optimal (≥ greedy) |
+| PPO training | Retrained with 21-dim action space |
+| Physics models | 4 (airflow, thermal ODE, CO₂ ODE, cosine-law lighting) |
+| C# ODE solvers | 2 (ThermalModel.cs + CO2Model.cs, both RK4) |
+| Comfort targets | 25°C, 300 lux, <1000 ppm CO₂ |
+| Room configs | 5 (classroom ×2, office, auditorium, conference room) |
+| API endpoints | 10+ (room_state, ppo_action, compare, anomalies, mqtt_status...) |
+| MQTT topics | 6 (occupancy, appliance_states, room_state, environment, command, anomaly) |
+| Anomaly detector | River HalfSpaceTrees + 5 rule-based alert types |
 
 ---
 
@@ -271,7 +293,7 @@ Shows the model generalising to unseen rooms
 
 | Subject | What to Say |
 |---------|-------------|
-| **Computer Networks** | "We use REST API polling: Unity sends HTTP GET every 5 seconds to Python backend. The live dashboard polls every 2 seconds. MQTT is planned for RPi integration." |
-| **Data Analysis & Algorithms** | "Three optimizers: Greedy is O(n log n) approximation for Set Cover. ILP gives exact optimal via Branch and Bound. GA uses evolutionary search with tournament selection. We compare all 3 in our pipeline." |
+| **Computer Networks** | "We use REST API polling: Unity sends HTTP GET every 5s to Python backend. We also built an MQTT bridge (paho-mqtt) with 6 pub/sub topics for real-time RPi integration — no polling needed." |
+| **Data Analysis & Algorithms** | "Three optimizers: Greedy is O(n log n) approximation for Set Cover. ILP gives exact optimal via Branch and Bound. GA uses evolutionary search with tournament selection. We compare all 3 in our pipeline. Plus River for streaming anomaly detection." |
 | **Discrete Mathematics** | "The core problem is Weighted Set Cover, which is NP-hard. We model it as an ILP with binary decision variables x_j in {0,1} and solve via CBC." |
-| **AI and ML** | "PPO is a policy gradient RL algorithm. Our agent learns through 2.5M simulated interactions. The reward function has 5 terms balancing energy vs comfort vs safety. We also tested cross-room generalisation." |
+| **AI and ML** | "PPO is a policy gradient RL agent with 21-dim action space (fans + lights + projectors). 7-term reward function with danger penalties. Cross-room generalisation. Plus River HalfSpaceTrees for online anomaly detection in sensor streams." |

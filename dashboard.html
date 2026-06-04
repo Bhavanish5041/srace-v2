@@ -37,7 +37,7 @@
     .header .status {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       font-size: 13px;
       color: #8b949e;
     }
@@ -51,6 +51,22 @@
 
     .status-dot.connected { background: #3fb950; }
 
+    .mqtt-badge {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #8b949e;
+    }
+
+    .mqtt-badge.connected {
+      border-color: #a371f7;
+      color: #a371f7;
+      background: rgba(163, 113, 247, 0.1);
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
@@ -58,10 +74,10 @@
 
     .main {
       display: grid;
-      grid-template-columns: 280px 1fr 320px;
+      grid-template-columns: 280px 1fr 340px;
       gap: 20px;
       padding: 20px 32px;
-      max-width: 1400px;
+      max-width: 1500px;
       margin: 0 auto;
     }
 
@@ -150,8 +166,6 @@
 
     .room-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(3, 1fr);
       gap: 6px;
       height: 320px;
       margin-bottom: 20px;
@@ -167,6 +181,7 @@
       position: relative;
       transition: all 0.3s;
       border: 2px solid transparent;
+      cursor: default;
     }
 
     .zone.occupied {
@@ -194,10 +209,11 @@
 
     .zone-people .icon { font-size: 16px; }
 
-    .zone-temp {
-      font-size: 11px;
+    .zone-detail {
+      font-size: 10px;
       color: #8b949e;
       margin-top: 2px;
+      text-align: center;
     }
 
     /* Appliance indicators */
@@ -232,6 +248,12 @@
       background: rgba(210, 153, 34, 0.15);
       border-color: #d29922;
       color: #d29922;
+    }
+
+    .appliance-chip.projector.on {
+      background: rgba(163, 113, 247, 0.15);
+      border-color: #a371f7;
+      color: #a371f7;
     }
 
     .appliance-chip .dot {
@@ -324,6 +346,42 @@
       display: none;
     }
 
+    /* ── Anomaly Alert ── */
+    .anomaly-banner {
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid #d29922;
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: #d29922;
+      font-size: 12px;
+      margin: 0 32px 10px;
+      display: none;
+      animation: slideDown 0.3s ease;
+    }
+
+    .anomaly-banner.critical {
+      background: rgba(248, 81, 73, 0.1);
+      border-color: #f85149;
+      color: #f85149;
+    }
+
+    @keyframes slideDown {
+      from { transform: translateY(-10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Appliance count badges */
+    .appliance-counts {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .appliance-counts > div {
+      text-align: center;
+    }
+
     @media (max-width: 1100px) {
       .main { grid-template-columns: 1fr; }
     }
@@ -336,8 +394,11 @@
   <div class="status">
     <div class="status-dot" id="statusDot"></div>
     <span id="statusText">Connecting...</span>
+    <span class="mqtt-badge" id="mqttBadge">MQTT ✗</span>
   </div>
 </div>
+
+<div class="anomaly-banner" id="anomalyBanner"></div>
 
 <div class="error-banner" id="errorBanner">
   Cannot connect to API. Start with: <code>uvicorn backend.api:app --port 8000</code>
@@ -416,7 +477,7 @@
 
     <div class="card metric-card">
       <div class="metric-label">Appliances</div>
-      <div style="display:flex;gap:20px;margin-top:8px;">
+      <div class="appliance-counts">
         <div>
           <div class="metric-value" id="metricFans" style="font-size:24px;color:#58a6ff;">—</div>
           <div class="metric-sub">Fans ON</div>
@@ -424,6 +485,10 @@
         <div>
           <div class="metric-value" id="metricLights" style="font-size:24px;color:#d29922;">—</div>
           <div class="metric-sub">Lights ON</div>
+        </div>
+        <div>
+          <div class="metric-value" id="metricProjectors" style="font-size:24px;color:#a371f7;">—</div>
+          <div class="metric-sub">Projectors</div>
         </div>
         <div>
           <div class="metric-value" id="metricPeople" style="font-size:24px;color:#3fb950;">—</div>
@@ -448,6 +513,7 @@
 const API = 'http://localhost:8000';
 let currentSolver = 'greedy';
 let pollTimer = null;
+let lastGridCols = 0;
 
 const SCENARIOS = {
   empty:   [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -457,18 +523,26 @@ const SCENARIOS = {
   cluster: [5,5,0,0,5,5,0,0,0,0,0,0],
 };
 
-// Build room grid
-function buildGrid() {
+// Build room grid with dynamic columns
+function buildGrid(nZones, nCols) {
+  if (!nCols) nCols = 4;
+  if (!nZones) nZones = 12;
+  const nRows = Math.ceil(nZones / nCols);
+
   const grid = document.getElementById('roomGrid');
+  grid.style.gridTemplateColumns = `repeat(${nCols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${nRows}, 1fr)`;
   grid.innerHTML = '';
-  for (let i = 0; i < 12; i++) {
+  lastGridCols = nCols;
+
+  for (let i = 0; i < nZones; i++) {
     const zone = document.createElement('div');
     zone.className = 'zone';
     zone.id = `zone-${i}`;
     zone.innerHTML = `
       <span class="zone-id">Z${i+1}</span>
       <div class="zone-people"><span class="icon">👤</span> <span id="zp-${i}">0</span></div>
-      <div class="zone-temp" id="zt-${i}">—°C</div>
+      <div class="zone-detail" id="zd-${i}">—</div>
     `;
     grid.appendChild(zone);
   }
@@ -509,11 +583,51 @@ async function fetchState() {
     showError(false);
     document.getElementById('statusDot').classList.add('connected');
     document.getElementById('statusText').textContent = `Live — ${currentSolver.toUpperCase()}`;
+
+    // Fetch MQTT status
+    fetchMQTTStatus();
+    // Fetch anomalies
+    fetchAnomalies();
   } catch (e) {
     showError(true);
     document.getElementById('statusDot').classList.remove('connected');
     document.getElementById('statusText').textContent = 'Disconnected';
   }
+}
+
+async function fetchMQTTStatus() {
+  try {
+    const res = await fetch(`${API}/mqtt_status`);
+    const data = await res.json();
+    const badge = document.getElementById('mqttBadge');
+    if (data.connected) {
+      badge.textContent = 'MQTT ✓';
+      badge.classList.add('connected');
+    } else {
+      badge.textContent = 'MQTT ✗';
+      badge.classList.remove('connected');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function fetchAnomalies() {
+  try {
+    const res = await fetch(`${API}/anomalies?n=5`);
+    const data = await res.json();
+    const banner = document.getElementById('anomalyBanner');
+
+    if (data.alerts && data.alerts.length > 0) {
+      const latest = data.alerts[data.alerts.length - 1];
+      // Only show recent alerts (last 30 seconds)
+      if (Date.now() / 1000 - latest.timestamp < 30) {
+        banner.textContent = latest.message;
+        banner.className = `anomaly-banner ${latest.severity === 'critical' ? 'critical' : ''}`;
+        banner.style.display = 'block';
+        return;
+      }
+    }
+    banner.style.display = 'none';
+  } catch (e) { /* ignore */ }
 }
 
 function updateUI(data) {
@@ -527,20 +641,26 @@ function updateUI(data) {
   document.getElementById('metricSaved').textContent = `${data.power_saved_pct || 0}%`;
   document.getElementById('powerBar').style.width = `${(power/maxP)*100}%`;
 
-  if (data.avg_temp) {
-    document.getElementById('metricTemp').textContent = `${data.avg_temp}°C`;
-    document.getElementById('tempBar').style.width = `${Math.min((data.avg_temp/45)*100, 100)}%`;
+  // Temperature (now available in both greedy and PPO modes)
+  const temp = data.avg_temp;
+  if (temp !== undefined && temp !== null) {
+    document.getElementById('metricTemp').textContent = `${temp}°C`;
+    document.getElementById('tempBar').style.width = `${Math.min((temp/45)*100, 100)}%`;
   }
 
-  if (data.avg_co2) {
-    document.getElementById('metricCO2').textContent = `${data.avg_co2} ppm`;
-    document.getElementById('co2Bar').style.width = `${Math.min((data.avg_co2/2000)*100, 100)}%`;
+  // CO₂
+  const co2 = data.avg_co2;
+  if (co2 !== undefined && co2 !== null) {
+    document.getElementById('metricCO2').textContent = `${co2} ppm`;
+    document.getElementById('co2Bar').style.width = `${Math.min((co2/2000)*100, 100)}%`;
   }
 
   const fans = data.appliances ? data.appliances.filter(a => a.type === 'fan' && a.active).length : (data.n_fans_on || 0);
   const lights = data.appliances ? data.appliances.filter(a => a.type === 'light' && a.active).length : (data.n_lights_on || 0);
+  const projectors = data.appliances ? data.appliances.filter(a => a.type === 'projector' && a.active).length : (data.n_projectors_on || 0);
   document.getElementById('metricFans').textContent = fans;
   document.getElementById('metricLights').textContent = lights;
+  document.getElementById('metricProjectors').textContent = projectors;
   document.getElementById('metricPeople').textContent = data.total_people || 0;
 
   // Appliance chips
@@ -553,14 +673,28 @@ function updateUI(data) {
     ).join('');
   }
 
-  // Zone grid
-  if (data.zones) {
+  // Zone grid — rebuild if zone count changed
+  if (data.zones && data.zones.length > 0) {
+    const nZones = data.zones.length;
+    const nCols = Math.max(...data.zones.map(z => z.col + 1)) || 4;
+    if (nZones !== document.querySelectorAll('.zone').length || nCols !== lastGridCols) {
+      buildGrid(nZones, nCols);
+    }
+
     data.zones.forEach((z, i) => {
       const el = document.getElementById(`zone-${i}`);
       if (el) {
-        el.className = `zone ${z.people > 0 ? 'occupied' : ''} ${z.avg_temp > 33 ? 'hot' : ''}`;
-        document.getElementById(`zp-${i}`).textContent = z.people;
-        document.getElementById(`zt-${i}`).textContent = `${z.avg_temp?.toFixed(1) || '—'}°C`;
+        const isOccupied = z.occupancy > 0;
+        const isHot = z.airflow_ms !== undefined && z.lux !== undefined && isOccupied;
+        el.className = `zone ${isOccupied ? 'occupied' : ''}`;
+        document.getElementById(`zp-${i}`).textContent = z.occupancy;
+        const detail = document.getElementById(`zd-${i}`);
+        if (detail) {
+          let info = [];
+          if (z.airflow_ms !== undefined) info.push(`${z.airflow_ms.toFixed(1)} m/s`);
+          if (z.lux !== undefined) info.push(`${z.lux.toFixed(0)} lux`);
+          detail.textContent = info.join(' · ') || '—';
+        }
       }
     });
   }
@@ -579,7 +713,7 @@ function startPolling() {
 }
 
 // Init
-buildGrid();
+buildGrid(12, 4);
 fetchState();
 startPolling();
 </script>

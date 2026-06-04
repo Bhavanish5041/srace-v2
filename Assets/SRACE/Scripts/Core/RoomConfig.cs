@@ -103,6 +103,36 @@ namespace SRACE.Core
     }
 
     /// <summary>
+    /// A ceiling-mounted projector appliance.
+    /// </summary>
+    [System.Serializable]
+    public class Projector
+    {
+        public string id;
+        public float x;
+        public float y;
+        public float powerWatts;
+        public float screenLux;       // lux output on screen area
+        public float coverageRadius;  // metres — zones within this radius get lux
+        public float heightAboveFloor;
+        public int idx;
+
+        public Projector(string id, float x, float y, float powerWatts,
+                         float screenLux, float coverageRadius,
+                         float heightAboveFloor, int idx = 0)
+        {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.powerWatts = powerWatts;
+            this.screenLux = screenLux;
+            this.coverageRadius = coverageRadius;
+            this.heightAboveFloor = heightAboveFloor;
+            this.idx = idx;
+        }
+    }
+
+    /// <summary>
     /// Target comfort thresholds.
     /// </summary>
     [System.Serializable]
@@ -143,6 +173,7 @@ namespace SRACE.Core
         public List<Zone> zones = new List<Zone>();
         public List<Fan> fans = new List<Fan>();
         public List<Light> lights = new List<Light>();
+        public List<Projector> projectors = new List<Projector>();
         public ComfortParams comfort;
 
         // ── Computed Properties ──
@@ -150,9 +181,10 @@ namespace SRACE.Core
         public int NZones => nZoneRows * nZoneCols;
         public int NFans => fans.Count;
         public int NLights => lights.Count;
-        public int NAppliances => NFans + NLights;
+        public int NProjectors => projectors.Count;
+        public int NAppliances => NFans + NLights + NProjectors;
 
-        /// <summary>All appliances in order: fans first, then lights.</summary>
+        /// <summary>All appliances in order: fans, then lights, then projectors.</summary>
         public List<object> AllAppliances
         {
             get
@@ -160,6 +192,7 @@ namespace SRACE.Core
                 var all = new List<object>();
                 all.AddRange(fans);
                 all.AddRange(lights);
+                all.AddRange(projectors);
                 return all;
             }
         }
@@ -169,7 +202,10 @@ namespace SRACE.Core
         {
             if (index < NFans)
                 return fans[index].powerWatts;
-            return lights[index - NFans].powerWatts;
+            int afterFans = index - NFans;
+            if (afterFans < NLights)
+                return lights[afterFans].powerWatts;
+            return projectors[afterFans - NLights].powerWatts;
         }
 
         /// <summary>Get ID of an appliance by its flat index.</summary>
@@ -177,7 +213,10 @@ namespace SRACE.Core
         {
             if (index < NFans)
                 return fans[index].id;
-            return lights[index - NFans].id;
+            int afterFans = index - NFans;
+            if (afterFans < NLights)
+                return lights[afterFans].id;
+            return projectors[afterFans - NLights].id;
         }
 
         /// <summary>Total max power if everything is on.</summary>
@@ -188,6 +227,7 @@ namespace SRACE.Core
                 float total = 0;
                 foreach (var f in fans) total += f.powerWatts;
                 foreach (var l in lights) total += l.powerWatts;
+                foreach (var p in projectors) total += p.powerWatts;
                 return total;
             }
         }
@@ -201,9 +241,10 @@ namespace SRACE.Core
         /// <summary>Print summary to Unity console.</summary>
         public void PrintSummary()
         {
-            float fanWatts = 0, lightWatts = 0;
+            float fanWatts = 0, lightWatts = 0, projWatts = 0;
             foreach (var f in fans) fanWatts += f.powerWatts;
             foreach (var l in lights) lightWatts += l.powerWatts;
+            foreach (var p in projectors) projWatts += p.powerWatts;
 
             Debug.Log($"═══════════════════════════════════════════");
             Debug.Log($"  SRACE Room: {name}");
@@ -212,6 +253,7 @@ namespace SRACE.Core
             Debug.Log($"  Zone grid  : {nZoneRows} rows × {nZoneCols} cols = {NZones} zones");
             Debug.Log($"  Fans       : {NFans}  (total {fanWatts:F0} W)");
             Debug.Log($"  Lights     : {NLights}  (total {lightWatts:F0} W)");
+            Debug.Log($"  Projectors : {NProjectors}  (total {projWatts:F0} W)");
             Debug.Log($"  Max power  : {MaxPowerWatts:F0} W");
             Debug.Log($"  Comfort    : {comfort.targetTempC}°C  {comfort.targetLux} lux" +
                       $"  <{comfort.maxCO2Ppm} ppm CO₂");

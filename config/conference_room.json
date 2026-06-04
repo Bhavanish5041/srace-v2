@@ -1,0 +1,44 @@
+{
+  "room": {
+    "name": "Conference Room",
+    "width": 8.0,
+    "depth": 6.0,
+    "ceiling_height": 2.8,
+    "ambient_temp": 34.0,
+    "ambient_co2": 410.0,
+    "ambient_lux": 40.0
+  },
+  "zones": {
+    "cols": 3,
+    "rows": 2
+  },
+  "fans": [
+    { "id": "F1", "x": 1.33, "y": 1.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "F2", "x": 4.00, "y": 1.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "F3", "x": 6.67, "y": 1.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "F4", "x": 1.33, "y": 4.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "F5", "x": 4.00, "y": 4.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "F6", "x": 6.67, "y": 4.5, "power_watts": 55, "airflow_radius": 2.0, "airflow_peak_ms": 2.0 },
+    { "id": "AC1", "x": 4.00, "y": 3.0, "power_watts": 200, "airflow_radius": 5.0, "airflow_peak_ms": 3.5 }
+  ],
+  "lights": [
+    { "id": "L1", "x": 1.0, "y": 1.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L2", "x": 4.0, "y": 1.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L3", "x": 7.0, "y": 1.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L4", "x": 2.5, "y": 3.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L5", "x": 5.5, "y": 3.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L6", "x": 1.0, "y": 5.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L7", "x": 4.0, "y": 5.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 },
+    { "id": "L8", "x": 7.0, "y": 5.0, "power_watts": 45, "lumens": 3500, "height_above_floor": 2.8 }
+  ],
+  "projectors": [
+    { "id": "P1", "x": 4.0, "y": 0.8, "power_watts": 150, "screen_lux": 200, "coverage_radius": 3.5, "height_above_floor": 2.5 },
+    { "id": "P2", "x": 4.0, "y": 5.2, "power_watts": 150, "screen_lux": 200, "coverage_radius": 3.5, "height_above_floor": 2.5 }
+  ],
+  "comfort": {
+    "target_temp_c": 23.0,
+    "target_lux": 400.0,
+    "max_co2_ppm": 800.0,
+    "min_airflow_ms": 0.4
+  }
+}

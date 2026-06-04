@@ -24,31 +24,33 @@ S23 Ultra / Unity NavMesh Agents
   > YOLOv8 / ArUco / Zone triggers
   > Zone counts every 5 seconds
         |
-Physics Engine (Python)
+Physics Engine (Python + C#)
   > Airflow: Gaussian decay
-  > Thermal: PDE solved with RK45
-  > CO2: Mass balance ODE
+  > Thermal: ODE solved with RK45 (Python) / RK4 (C#)
+  > CO2: Mass balance ODE (Python RK45 / C# RK4)
   > Lighting: Cosine-law (inverse square)
-  > Output: Coverage matrix C[appliance][zone]
+  > Output: Coverage matrix C[appliance][zone] (fans + lights + projectors)
         |
 Optimizer Tier (3 solvers)
-  > Greedy (real time, every 30s)
+  > Greedy (real time, every 30s) — 3-phase: fans → lights → projectors
   > ILP via PuLP (exact optimal, every 60s)
   > GA evolutionary (multi-objective, 80 generations)
         |
 PPO RL Agent (Stable-Baselines3)
-  > State: crowd + temps + CO2 + lux + appliance states
-  > Action: which fans/lights to toggle
-  > Reward: -power + comfort - switching + air_quality - danger
+  > State: crowd + temps + CO2 + lux + appliance states (incl. projectors)
+  > Action: which fans/lights/projectors to toggle
+  > Reward: -power + comfort - switching + air_quality - danger + stability
         |
-FastAPI Backend
-  > REST endpoints (room_state, set_occupancy, ppo_action, compare)
-  > Unity polls every 5 seconds
+Real-Time Communication
+  > MQTT bridge (paho-mqtt) — pub/sub for RPi, Unity, dashboard
+  > FastAPI REST — 10+ endpoints (room_state, ppo_action, anomalies, mqtt_status)
+  > River anomaly detection — streaming ML for sensor drift alerts
         |
-Three simultaneous outputs:
-  Unity 3D with Power HUD > spinning fans, glowing lights, zone heatmap, live power meter
-  Live HTML Dashboard     > browser-based real-time room visualisation
-  FastAPI Swagger UI      > live data, power metrics
+Four simultaneous outputs:
+  Unity 3D with Power HUD > fans, lights, projectors, temp/CO₂ bars, zone heatmap
+  Live HTML Dashboard     > projector chips, anomaly alerts, MQTT status
+  FastAPI Swagger UI      > live data, power metrics, anomaly stats
+  RPi LED Panel           > MQTT-driven appliance state indicators
 ```
 
 ---
@@ -80,17 +82,30 @@ Three simultaneous outputs:
 ### Week 3: RL + Backend + Integration (Complete)
 - [x] Custom Gymnasium environment (`SRACEEnv`) with simplified physics
 - [x] PPO training pipeline (Stable-Baselines3, configurable timesteps)
-- [x] Multi-objective reward function (5-term: power, comfort, switching, air quality, danger)
+- [x] Multi-objective reward function (7-term: power, comfort, switching, air quality, danger, stability, consistency)
 - [x] Empty room fix: hard penalty for wasted energy when nobody is present
 - [x] PPO evaluation framework with baseline comparison
 - [x] Cross-room generalisation (test on unseen office/auditorium layouts)
-- [x] FastAPI REST backend with 6 endpoints (room_state, set_occupancy, ppo_action, ppo_reset, compare, config)
+- [x] FastAPI REST backend with 10+ endpoints
 - [x] Unity to Python bridge (`SRACEApiClient` polls backend every 5s)
 - [x] Genetic Algorithm optimizer (tournament selection, crossover, mutation)
 - [x] Live HTML dashboard (polls API, scenario buttons, greedy/PPO toggle)
 - [x] Visualization charts (PPO step-by-step + baseline comparison bar chart)
-- [x] Trained PPO model saved to `models/srace_ppo.zip` (2.5M steps)
-- [x] 3 room configs (classroom, office, auditorium)
+- [x] Trained PPO model saved to `models/srace_ppo.zip`
+- [x] 4 room configs (classroom, office, auditorium, conference room)
+
+### Week 4: Advanced Features (Complete)
+- [x] Projector appliance type (3rd appliance alongside fans/lights)
+- [x] C# Thermal ODE model (RK4 solver, marginal analysis per fan)
+- [x] C# CO₂ mass-balance ODE model (RK4 solver)
+- [x] Real-time temp/CO₂/lux tracking in Unity HUD (live bars + color-coded)
+- [x] PPO environment updated for projector awareness (21 appliances)
+- [x] Coverage matrix expanded for projectors (distance-based coverage)
+- [x] MQTT real-time bridge (`paho-mqtt`, 6 topics, thread-safe)
+- [x] River streaming anomaly detection (HalfSpaceTrees + rule-based alerts)
+- [x] Dashboard upgrade: projector chips, MQTT badge, anomaly alerts, dynamic grid
+- [x] PPO diagnostics toolkit (`diagnose_ppo.py`, 6-section report)
+- [x] Backend: projector support in all endpoints, anomaly/MQTT endpoints
 
 ---
 
@@ -99,66 +114,67 @@ Three simultaneous outputs:
 ```
 srace-v2/
 ├── config/
-│   ├── default_room.json             # 10x8m classroom, 4x3 grid, 10 fans, 10 lights
+│   ├── default_room.json             # 10x8m classroom, 4x3 grid, 10F/10L/1P
 │   ├── classroom_real.json           # Real classroom dimensions (10.8x7.6m)
-│   ├── office_small.json             # 6x5m office, 2x2 grid, 4 fans, 4 lights
-│   └── auditorium.json               # 15x10m hall, 5x4 grid, 16 fans, 16 lights
+│   ├── office_small.json             # 6x5m office, 2x2 grid, 4F/4L/1P
+│   ├── auditorium.json               # 15x10m hall, 5x4 grid, 16F/16L/2P
+│   └── conference_room.json          # 8x6m room, 3x2 grid, 6F/6L/2P
 │
 ├── core/
-│   ├── room_config.py                # RoomConfig, Zone, Fan, Light, ComfortParams
-│   └── coverage.py                   # Binary coverage matrix from physics
+│   ├── room_config.py                # RoomConfig, Zone, Fan, Light, Projector
+│   └── coverage.py                   # Coverage matrix (fans + lights + projectors)
 │
 ├── physics/
 │   ├── airflow.py                    # Gaussian decay fan airflow model
-│   ├── thermal.py                    # Thermal ODE (Method of Lines + RK45)
-│   ├── co2_model.py                  # CO2 mass-balance ODE
+│   ├── thermal.py                    # Thermal ODE (RK45)
+│   ├── co2_model.py                  # CO₂ mass-balance ODE (RK45)
 │   └── lighting.py                   # Cosine-law illuminance model
 │
 ├── optimizer/
-│   ├── greedy_solver.py              # Greedy weighted set cover (fans/lights separate)
+│   ├── greedy_solver.py              # Greedy set cover (3-phase: fans→lights→projectors)
 │   ├── ilp_solver.py                 # Exact ILP via PuLP CBC
-│   └── ga_solver.py                  # Genetic Algorithm (tournament + crossover + mutation)
+│   └── ga_solver.py                  # Genetic Algorithm
 │
 ├── ml/
-│   ├── gym_env.py                    # Custom Gymnasium environment for PPO
-│   ├── reward.py                     # 5-term reward with empty room fix
-│   ├── train_ppo.py                  # PPO training (SB3, EvalCallback, resume support)
-│   └── test_ppo.py                   # Evaluation with scenarios + cross-room testing
+│   ├── gym_env.py                    # Gymnasium env (fans+lights+projectors)
+│   ├── reward.py                     # 7-term reward function
+│   ├── train_ppo.py                  # PPO training (SB3, EvalCallback)
+│   ├── test_ppo.py                   # Evaluation + cross-room testing
+│   ├── diagnose_ppo.py               # 6-section diagnostic report generator
+│   └── anomaly_detector.py           # River streaming anomaly detection
 │
 ├── backend/
-│   └── api.py                        # FastAPI server (6 endpoints + PPO integration)
+│   ├── api.py                        # FastAPI (10+ endpoints, MQTT, anomaly)
+│   └── mqtt_bridge.py                # Paho MQTT pub/sub bridge (6 topics)
 │
 ├── models/
-│   ├── srace_ppo.zip                 # Trained PPO model (2.5M steps)
-│   ├── best/                         # Best model checkpoint (from EvalCallback)
-│   └── eval_logs/                    # Training evaluation logs
-│
-├── visualization/
-│   └── room_grid.py                  # Matplotlib room grid visualization
+│   ├── srace_ppo.zip                 # Trained PPO model
+│   └── best/                         # Best model checkpoint
 │
 ├── Assets/SRACE/Scripts/             # Unity C# simulation
 │   ├── Core/
-│   │   ├── RoomConfig.cs             # C# data model (Zone, Fan, Light, ComfortParams)
-│   │   ├── RoomConfigLoader.cs       # JSON to RoomConfig parser
-│   │   ├── CoverageMatrix.cs         # Binary coverage matrix (C# port)
-│   │   ├── SRACEManager.cs           # Main orchestrator (physics to greedy to visuals)
-│   │   └── SRACEApiClient.cs         # Unity to Python REST bridge
+│   │   ├── RoomConfig.cs             # C# data model (Fan, Light, Projector)
+│   │   ├── RoomConfigLoader.cs       # JSON → RoomConfig parser
+│   │   ├── CoverageMatrix.cs         # Coverage matrix (C#)
+│   │   ├── SRACEManager.cs           # Orchestrator + real-time physics tick
+│   │   └── SRACEApiClient.cs         # REST + PPO/Greedy toggle
 │   ├── Environment/
-│   │   ├── RoomBuilder.cs            # Code-generates floor, walls, ceiling
-│   │   ├── FanObject.cs              # Ceiling fan with spinning blades
-│   │   ├── LightObject.cs            # Ceiling light with glow + halo
+│   │   ├── RoomBuilder.cs            # Code-generated 3D room
+│   │   ├── FanObject.cs              # Spinning fan with states
+│   │   ├── LightObject.cs            # Glowing light with halo
+│   │   ├── ProjectorObject.cs        # Projector with spot lights
 │   │   ├── ZoneHeatmap.cs            # Color-coded zone overlay
-│   │   ├── PowerHUD.cs               # Live power meter overlay (OnGUI)
-│   │   └── ClassroomCamera.cs        # Orbit camera with mouse control
+│   │   ├── PowerHUD.cs               # Power + Temp + CO₂ HUD
+│   │   └── ClassroomCamera.cs        # Orbit camera
 │   └── Physics/
-│       ├── AirflowModel.cs           # Gaussian airflow (C# port)
-│       └── LightingModel.cs          # Cosine-law lux (C# port)
+│       ├── AirflowModel.cs           # Gaussian airflow (C#)
+│       ├── LightingModel.cs          # Cosine-law lux (C#)
+│       ├── ThermalModel.cs           # Thermal ODE — RK4 solver (C#)
+│       └── CO2Model.cs               # CO₂ ODE — RK4 solver (C#)
 │
-├── output/                           # Generated Matplotlib visualizations
-├── main.py                           # Full pipeline: config to physics to optimizer to output
-├── dashboard.html                    # Live browser dashboard (polls API)
-├── visualize_results.py              # Generate comparison charts (PPO vs baselines)
-└── requirements.txt                  # Python dependencies
+├── dashboard.html                    # Live dashboard (MQTT badge, anomaly alerts)
+├── main.py                           # Full pipeline orchestrator
+└── requirements.txt                  # numpy, scipy, paho-mqtt, river, sb3
 ```
 
 ---
@@ -265,12 +281,15 @@ uvicorn backend.api:app --reload --port 8000
 
 # Swagger UI: http://localhost:8000/docs
 # Endpoints:
-#   GET  /room_state      physics + greedy optimizer result
+#   GET  /room_state      physics + greedy optimizer (with temp/CO₂/lux)
 #   POST /set_occupancy   update zone occupancy
 #   GET  /ppo_action      PPO agent decision (with physics state)
 #   POST /ppo_reset       reset PPO agent state
 #   GET  /compare         greedy vs PPO side-by-side
 #   GET  /config          raw room configuration
+#   GET  /mqtt_status     MQTT bridge connection status
+#   GET  /anomalies       recent anomaly alerts from River
+#   GET  /anomaly_stats   anomaly detector statistics
 ```
 
 ### Live Dashboard
@@ -301,6 +320,8 @@ uvicorn backend.api:app --port 8000
 | `Space` | Re-run optimizer |
 | `F` | Toggle all fans |
 | `L` | Toggle all lights |
+| `P` | Toggle all projectors |
+| `M` | Switch greedy ↔ PPO solver |
 
 **API mode:** Add `SRACEApiClient` component to enable Python backend polling.
 
@@ -352,14 +373,16 @@ and the room rebuilds automatically.
 
 | Layer | Technology |
 |-------|------------|
-| Physics | Python, NumPy, SciPy (`solve_ivp` RK45) |
-| Optimization | PuLP ILP (CBC solver), GA (custom) |
+| Physics | Python (SciPy RK45), C# (RK4 ODE solver) |
+| Optimization | PuLP ILP (CBC), GA, Greedy 3-phase |
 | Machine Learning | PyTorch, Stable-Baselines3 PPO, Gymnasium |
+| Anomaly Detection | River (HalfSpaceTrees, streaming ML) |
 | Backend | FastAPI, Uvicorn |
+| Real-Time Comms | Paho MQTT (6 topics, pub/sub) |
 | 3D Simulation | Unity 2022.3+ (URP), C# |
-| Dashboard | Single-page HTML (polls API, real-time updates) |
+| Dashboard | Single-page HTML (REST + MQTT status) |
 | Vision (planned) | YOLOv8, OpenCV ArUco |
-| Hardware (planned) | Raspberry Pi 4, 20 LEDs |
+| Hardware (planned) | Raspberry Pi 4, LEDs via MQTT |
 
 ---
 

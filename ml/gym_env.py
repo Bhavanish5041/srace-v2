@@ -87,7 +87,8 @@ class SRACEEnv(gym.Env):
         self.n_zones = self.cfg.n_zones
         self.n_fans = self.cfg.n_fans
         self.n_lights = self.cfg.n_lights
-        self.n_appliances = self.cfg.n_appliances  # fans + lights
+        self.n_projectors = self.cfg.n_projectors
+        self.n_appliances = self.cfg.n_appliances  # fans + lights + projectors
 
         # ── Pre-compute static physics matrices ──
         self.airflow_matrix = compute_airflow_matrix(self.cfg)
@@ -97,6 +98,7 @@ class SRACEEnv(gym.Env):
         self.appliance_watts = np.array(
             [f.power_watts for f in self.cfg.fans]
             + [l.power_watts for l in self.cfg.lights]
+            + [p.power_watts for p in self.cfg.projectors]
         )
 
         # ── Action space: binary on/off for each appliance ──
@@ -237,7 +239,9 @@ class SRACEEnv(gym.Env):
         scipy.integrate.
         """
         fan_states = self.appliance_states[:self.n_fans].astype(bool)
-        light_states = self.appliance_states[self.n_fans:].astype(bool)
+        light_end = self.n_fans + self.n_lights
+        light_states = self.appliance_states[self.n_fans:light_end].astype(bool)
+        proj_states = self.appliance_states[light_end:].astype(bool) if self.n_projectors > 0 else np.array([], dtype=bool)
 
         # ── Airflow → Temperature ──
         if fan_states.any():
@@ -274,12 +278,28 @@ class SRACEEnv(gym.Env):
         self.zone_co2 = np.clip(self.zone_co2, self.cfg.ambient_co2, MAX_CO2)
 
         # ── Lighting ──
+        # Combine lights + projectors for lux computation
         if light_states.any():
             self.zone_lux = total_lux_per_zone(
                 self.lux_matrix, light_states, self.cfg.ambient_lux
             )
         else:
             self.zone_lux = np.full(self.n_zones, self.cfg.ambient_lux)
+
+        # Add projector lux contribution
+        if self.n_projectors > 0 and proj_states.any():
+            for pi, proj in enumerate(self.cfg.projectors):
+                if not proj_states[pi]:
+                    continue
+                for zi in range(self.n_zones):
+                    z = self.cfg.zones[zi]
+                    dx = proj.x - z.cx
+                    dy = proj.y - z.cy
+                    dist = np.sqrt(dx*dx + dy*dy)
+                    if dist <= proj.coverage_radius:
+                        # Linear falloff within coverage radius
+                        falloff = 1.0 - (dist / proj.coverage_radius)
+                        self.zone_lux[zi] += proj.screen_lux * falloff
 
     def _get_observation(self) -> np.ndarray:
         """

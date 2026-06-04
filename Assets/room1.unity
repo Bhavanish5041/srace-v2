@@ -129,6 +129,7 @@ GameObject:
   m_Component:
   - component: {fileID: 345453564}
   - component: {fileID: 345453563}
+  - component: {fileID: 345453565}
   m_Layer: 0
   m_Name: SRACEManager
   m_TagString: Untagged
@@ -148,7 +149,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68996100d365a588a87be987f2ba4632, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SRACE.Core.SRACEManager
-  roomConfigAsset: {fileID: 0}
+  roomConfigAsset: {fileID: 4900000, guid: b04b4b48a565acadeb542475493041dd, type: 3}
 --- !u!4 &345453564
 Transform:
   m_ObjectHideFlags: 0
@@ -164,6 +165,23 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &345453565
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 345453562}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 63861844d9fb78e57b2b63522b0e8b32, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SRACE.Core.SRACEApiClient
+  apiBaseUrl: http://localhost:8000
+  pollInterval: 5
+  manager: {fileID: 0}
+  pollingEnabled: 1
+  usePPO: 0
 --- !u!1 &696338687
 GameObject:
   m_ObjectHideFlags: 0

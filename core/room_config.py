@@ -61,6 +61,19 @@ class Light:
 
 
 @dataclass
+class Projector:
+    """A ceiling-mounted projector appliance."""
+    id: str
+    x: float
+    y: float
+    power_watts: float
+    screen_lux: float
+    coverage_radius: float
+    height_above_floor: float
+    idx: int = 0
+
+
+@dataclass
 class ComfortParams:
     """Target comfort thresholds."""
     target_temp_c: float
@@ -101,6 +114,7 @@ class RoomConfig:
     zones: list[Zone] = field(default_factory=list)
     fans: list[Fan] = field(default_factory=list)
     lights: list[Light] = field(default_factory=list)
+    projectors: list[Projector] = field(default_factory=list)
     comfort: ComfortParams = None
 
     @property
@@ -116,13 +130,17 @@ class RoomConfig:
         return len(self.lights)
 
     @property
+    def n_projectors(self) -> int:
+        return len(self.projectors)
+
+    @property
     def n_appliances(self) -> int:
-        return self.n_fans + self.n_lights
+        return self.n_fans + self.n_lights + self.n_projectors
 
     @property
     def all_appliances(self) -> list:
-        """All appliances in order: fans first, then lights."""
-        return self.fans + self.lights
+        """All appliances in order: fans, lights, projectors."""
+        return self.fans + self.lights + self.projectors
 
     def zone_at(self, row: int, col: int) -> Zone:
         """Get zone by grid coordinates."""
@@ -227,6 +245,22 @@ def load_config(path: str | Path) -> RoomConfig:
         _validate_bounds(light, width, depth, "Light")
         lights.append(light)
 
+    # --- Projectors ---
+    projectors: list[Projector] = []
+    for i, pd in enumerate(data.get("projectors", [])):
+        projector = Projector(
+            id=pd["id"],
+            x=float(pd["x"]),
+            y=float(pd["y"]),
+            power_watts=float(pd["power_watts"]),
+            screen_lux=float(pd["screen_lux"]),
+            coverage_radius=float(pd["coverage_radius"]),
+            height_above_floor=float(pd.get("height_above_floor", ceiling)),
+            idx=i,
+        )
+        _validate_bounds(projector, width, depth, "Projector")
+        projectors.append(projector)
+
     # --- Comfort ---
     cc = data.get("comfort", {})
     comfort = ComfortParams(
@@ -249,6 +283,7 @@ def load_config(path: str | Path) -> RoomConfig:
         zones=zones,
         fans=fans,
         lights=lights,
+        projectors=projectors,
         comfort=comfort,
     )
 
@@ -264,6 +299,7 @@ def print_config_summary(cfg: RoomConfig):
     print(f"  Zone grid  : {cfg.n_zone_rows} rows × {cfg.n_zone_cols} cols = {cfg.n_zones} zones")
     print(f"  Fans       : {cfg.n_fans}  (total {sum(f.power_watts for f in cfg.fans):.0f} W)")
     print(f"  Lights     : {cfg.n_lights}  (total {sum(l.power_watts for l in cfg.lights):.0f} W)")
+    print(f"  Projectors : {cfg.n_projectors}  (total {sum(p.power_watts for p in cfg.projectors):.0f} W)")
     print(f"  Max power  : {sum(a.power_watts for a in cfg.all_appliances):.0f} W")
     print(f"  Comfort    : {cfg.comfort.target_temp_c}°C  {cfg.comfort.target_lux} lux"
           f"  <{cfg.comfort.max_co2_ppm} ppm CO₂")

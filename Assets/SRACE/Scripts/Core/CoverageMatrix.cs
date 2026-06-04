@@ -33,7 +33,7 @@ namespace SRACE.Core
         /// <summary>Set of occupied zone indices.</summary>
         public HashSet<int> OccupiedZones { get; private set; }
 
-        /// <summary>Ordered appliance IDs (fans first, then lights).</summary>
+        /// <summary>Ordered appliance IDs (fans first, then lights, then projectors).</summary>
         public string[] ApplianceIds { get; private set; }
 
         /// <summary>Ordered power consumption array.</summary>
@@ -56,7 +56,7 @@ namespace SRACE.Core
             LuxMatrix = luxMatrix;
             OccupiedZones = new HashSet<int>(occupiedZones);
 
-            // Build appliance metadata (fans first, then lights)
+            // Build appliance metadata (fans first, then lights, then projectors)
             ApplianceIds = new string[cfg.NAppliances];
             ApplianceWatts = new float[cfg.NAppliances];
 
@@ -70,6 +70,12 @@ namespace SRACE.Core
                 ApplianceIds[cfg.NFans + i] = cfg.lights[i].id;
                 ApplianceWatts[cfg.NFans + i] = cfg.lights[i].powerWatts;
             }
+            for (int i = 0; i < cfg.NProjectors; i++)
+            {
+                int idx = cfg.NFans + cfg.NLights + i;
+                ApplianceIds[idx] = cfg.projectors[i].id;
+                ApplianceWatts[idx] = cfg.projectors[i].powerWatts;
+            }
 
             // Build binary coverage matrix
             Binary = BuildBinaryCoverage(cfg);
@@ -79,13 +85,15 @@ namespace SRACE.Core
         /// Construct binary coverage matrix.
         /// Fan covers zone if: airflow >= minAirflowMs OR thermalImpact >= 0.5°C
         /// Light covers zone if: lux >= 20 (meaningful contribution)
+        /// Projector covers zone if: distance from projector to zone center <= coverageRadius
         /// </summary>
         private int[,] BuildBinaryCoverage(RoomConfig cfg)
         {
             int nFans = cfg.NFans;
             int nLights = cfg.NLights;
+            int nProjectors = cfg.NProjectors;
             int nZones = cfg.NZones;
-            int nTotal = nFans + nLights;
+            int nTotal = nFans + nLights + nProjectors;
 
             var binary = new int[nTotal, nZones];
 
@@ -114,6 +122,21 @@ namespace SRACE.Core
                 {
                     if (LuxMatrix[li, zi] >= luxThreshold)
                         binary[nFans + li, zi] = 1;
+                }
+            }
+
+            // Projector coverage — distance-based (zone center within coverage radius)
+            for (int pi = 0; pi < nProjectors; pi++)
+            {
+                var proj = cfg.projectors[pi];
+                for (int zi = 0; zi < nZones; zi++)
+                {
+                    var zone = cfg.zones[zi];
+                    float dx = proj.x - zone.cx;
+                    float dy = proj.y - zone.cy;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist <= proj.coverageRadius)
+                        binary[nFans + nLights + pi, zi] = 1;
                 }
             }
 
@@ -162,3 +185,4 @@ namespace SRACE.Core
         }
     }
 }
+

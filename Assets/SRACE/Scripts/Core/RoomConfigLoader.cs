@@ -24,6 +24,7 @@ namespace SRACE.Core
             public JsonZones zones;
             public JsonFan[] fans;
             public JsonLight[] lights;
+            public JsonProjector[] projectors;
             public JsonComfort comfort;
         }
 
@@ -65,6 +66,18 @@ namespace SRACE.Core
             public float y;
             public float power_watts;
             public float lumens;
+            public float height_above_floor = 3f;
+        }
+
+        [Serializable]
+        private class JsonProjector
+        {
+            public string id;
+            public float x;
+            public float y;
+            public float power_watts;
+            public float screen_lux;
+            public float coverage_radius;
             public float height_above_floor = 3f;
         }
 
@@ -148,6 +161,21 @@ namespace SRACE.Core
                 }
             }
 
+            // ── Build projectors ──
+            var projectors = new List<Projector>();
+            if (data.projectors != null)
+            {
+                for (int i = 0; i < data.projectors.Length; i++)
+                {
+                    var pd = data.projectors[i];
+                    float h = pd.height_above_floor > 0 ? pd.height_above_floor : ceiling;
+                    var projector = new Projector(pd.id, pd.x, pd.y, pd.power_watts,
+                                                  pd.screen_lux, pd.coverage_radius, h, i);
+                    ValidateBounds(projector.x, projector.y, width, depth, "Projector", projector.id);
+                    projectors.Add(projector);
+                }
+            }
+
             // ── Comfort params ──
             ComfortParams comfort;
             if (data.comfort != null)
@@ -179,6 +207,7 @@ namespace SRACE.Core
                 zones = zones,
                 fans = fans,
                 lights = lights,
+                projectors = projectors,
                 comfort = comfort,
             };
 

@@ -7,3 +7,5 @@ uvicorn>=0.29
 gymnasium>=0.29
 stable-baselines3>=2.3
 torch>=2.0
+paho-mqtt>=2.0
+river>=0.21

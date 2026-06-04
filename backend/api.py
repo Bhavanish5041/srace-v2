@@ -47,6 +47,21 @@ except ImportError:
     PPO_AVAILABLE = False
     print("⚠ stable-baselines3 not installed — PPO endpoints disabled")
 
+# MQTT bridge (loaded lazily — works even if paho-mqtt is missing)
+try:
+    from backend.mqtt_bridge import MQTTBridge, MQTT_AVAILABLE as MQTT_LIB_AVAILABLE
+except ImportError:
+    MQTT_LIB_AVAILABLE = False
+    MQTTBridge = None
+
+# River anomaly detection (loaded lazily)
+try:
+    from ml.anomaly_detector import SRACEAnomalyDetector
+    ANOMALY_AVAILABLE = True
+except ImportError:
+    ANOMALY_AVAILABLE = False
+    SRACEAnomalyDetector = None
+
 # ══════════════════════════════════════════════════════════════
 #  APP SETUP
 # ══════════════════════════════════════════════════════════════
@@ -79,6 +94,8 @@ cfg: RoomConfig = None
 airflow_mat: np.ndarray = None
 lux_mat: np.ndarray = None
 ppo_model = None  # Loaded at startup if model file exists
+mqtt_bridge = None  # MQTT bridge instance
+anomaly_detector = None  # River anomaly detector instance
 
 # Current occupancy state (mutable — updated via POST /set_occupancy)
 zone_occupancy: np.ndarray = None
@@ -130,6 +147,31 @@ def startup():
         else:
             print(f"⚠ No PPO model at {model_path} — /ppo_action will return 404")
 
+    # Initialize MQTT bridge
+    global mqtt_bridge
+    if MQTT_LIB_AVAILABLE and MQTTBridge is not None:
+        def on_mqtt_occupancy(zone_people):
+            """Handle occupancy updates from MQTT (e.g. camera pipeline)."""
+            global zone_occupancy
+            if len(zone_people) == cfg.n_zones:
+                zone_occupancy = np.array(zone_people, dtype=float)
+                print(f"📡 MQTT: Occupancy updated — {int(zone_occupancy.sum())} people")
+
+        mqtt_bridge = MQTTBridge(
+            on_occupancy=on_mqtt_occupancy,
+        )
+        mqtt_bridge.start()
+    else:
+        print("⚠ MQTT bridge not available")
+
+    # Initialize anomaly detector
+    global anomaly_detector
+    if ANOMALY_AVAILABLE and SRACEAnomalyDetector is not None:
+        anomaly_detector = SRACEAnomalyDetector()
+        print("✓ River anomaly detector initialized")
+    else:
+        print("⚠ Anomaly detection not available (install river>=0.21)")
+
     print(f"✓ SRACE API ready — {cfg.n_zones} zones, {cfg.n_appliances} appliances\n")
 
 
@@ -163,7 +205,7 @@ class ZoneInfo(BaseModel):
 
 class ApplianceInfo(BaseModel):
     id: str
-    type: str  # "fan" or "light"
+    type: str  # "fan", "light", or "projector"
     x: float
     y: float
     power_watts: float
@@ -182,6 +224,9 @@ class RoomStateResponse(BaseModel):
     solve_time_ms: float
     occupied_zone_count: int
     total_people: int
+    avg_temp: float = 0.0
+    avg_co2: float = 0.0
+    avg_lux: float = 0.0
 
 
 # ══════════════════════════════════════════════════════════════
@@ -274,6 +319,33 @@ def get_room_state():
             power_watts=light.power_watts,
             active=ai in selected_set,
         ))
+    for pi, proj in enumerate(cfg.projectors):
+        ai = cfg.n_fans + cfg.n_lights + pi
+        appliances_out.append(ApplianceInfo(
+            id=proj.id,
+            type="projector",
+            x=round(proj.x, 2),
+            y=round(proj.y, 2),
+            power_watts=proj.power_watts,
+            active=ai in selected_set,
+        ))
+
+    # Compute environment metrics for dashboard
+    # Run simplified thermal/CO₂ estimate based on current occupancy
+    avg_temp = float(cfg.ambient_temp)
+    avg_co2 = float(cfg.ambient_co2)
+    avg_lux = float(cfg.ambient_lux)
+    total_people = int(zone_occupancy.sum())
+    if total_people > 0:
+        # Rough estimate: each person adds heat, fans cool
+        active_fans = np.array([fi in selected_set for fi in range(cfg.n_fans)])
+        if active_fans.any():
+            from physics.airflow import total_airflow_per_zone
+            af = total_airflow_per_zone(airflow_mat, active_fans)
+            avg_temp = float(cfg.ambient_temp + 0.05 * total_people - 0.02 * af.sum())
+        else:
+            avg_temp = float(cfg.ambient_temp + 0.05 * total_people)
+        avg_co2 = float(cfg.ambient_co2 + 5.0 * total_people)
 
     return RoomStateResponse(
         room_name=cfg.name,
@@ -290,7 +362,10 @@ def get_room_state():
         solver="greedy",
         solve_time_ms=round(solve_ms, 2),
         occupied_zone_count=len(occupied),
-        total_people=int(zone_occupancy.sum()),
+        total_people=total_people,
+        avg_temp=round(avg_temp, 1),
+        avg_co2=round(avg_co2, 0),
+        avg_lux=round(avg_lux, 1),
     )
 
 
@@ -393,7 +468,9 @@ def _ppo_physics_tick():
     from physics.lighting import total_lux_per_zone
 
     fan_states = ppo_appliance_states[:cfg.n_fans].astype(bool)
-    light_states = ppo_appliance_states[cfg.n_fans:].astype(bool)
+    light_end = cfg.n_fans + cfg.n_lights
+    light_states = ppo_appliance_states[cfg.n_fans:light_end].astype(bool)
+    proj_states = ppo_appliance_states[light_end:].astype(bool) if cfg.n_projectors > 0 else np.array([], dtype=bool)
 
     # Airflow → Temperature
     if fan_states.any():
@@ -415,11 +492,25 @@ def _ppo_physics_tick():
     ppo_zone_co2 = ppo_zone_co2 - _CO2_NATURAL_DECAY * (ppo_zone_co2 - cfg.ambient_co2)
     ppo_zone_co2 = np.clip(ppo_zone_co2, cfg.ambient_co2, _MAX_CO2)
 
-    # Lighting
+    # Lighting (lights + projectors)
     if light_states.any():
         ppo_zone_lux = total_lux_per_zone(lux_mat, light_states, cfg.ambient_lux)
     else:
         ppo_zone_lux = np.full(cfg.n_zones, cfg.ambient_lux)
+
+    # Add projector lux contribution
+    if cfg.n_projectors > 0 and proj_states.any():
+        for pi, proj in enumerate(cfg.projectors):
+            if not proj_states[pi]:
+                continue
+            for zi in range(cfg.n_zones):
+                z = cfg.zones[zi]
+                dx = proj.x - z.cx
+                dy = proj.y - z.cy
+                dist = np.sqrt(dx*dx + dy*dy)
+                if dist <= proj.coverage_radius:
+                    falloff = 1.0 - (dist / proj.coverage_radius)
+                    ppo_zone_lux[zi] += proj.screen_lux * falloff
 
 
 @app.get("/ppo_action", summary="Run PPO agent to get appliance decisions")
@@ -454,7 +545,9 @@ def ppo_action():
 
     # Build response
     total_power = float(np.dot(ppo_appliance_states, np.array(
-        [f.power_watts for f in cfg.fans] + [l.power_watts for l in cfg.lights]
+        [f.power_watts for f in cfg.fans]
+        + [l.power_watts for l in cfg.lights]
+        + [p.power_watts for p in cfg.projectors]
     )))
     max_watts = sum(a.power_watts for a in cfg.all_appliances)
     saved_pct = (1 - total_power / max_watts) * 100 if max_watts > 0 else 100.0
@@ -478,6 +571,15 @@ def ppo_action():
             "power_watts": light.power_watts,
             "active": bool(ppo_appliance_states[cfg.n_fans + li]),
         })
+    for pi, proj in enumerate(cfg.projectors):
+        appliances_out.append({
+            "id": proj.id,
+            "type": "projector",
+            "x": round(proj.x, 2),
+            "y": round(proj.y, 2),
+            "power_watts": proj.power_watts,
+            "active": bool(ppo_appliance_states[cfg.n_fans + cfg.n_lights + pi]),
+        })
 
     return {
         "solver": "ppo",
@@ -491,7 +593,8 @@ def ppo_action():
         "avg_lux": round(float(ppo_zone_lux.mean()), 1),
         "n_active": int(ppo_appliance_states.sum()),
         "n_fans_on": int(ppo_appliance_states[:cfg.n_fans].sum()),
-        "n_lights_on": int(ppo_appliance_states[cfg.n_fans:].sum()),
+        "n_lights_on": int(ppo_appliance_states[cfg.n_fans:cfg.n_fans + cfg.n_lights].sum()),
+        "n_projectors_on": int(ppo_appliance_states[cfg.n_fans + cfg.n_lights:].sum()),
         "total_people": int(zone_occupancy.sum()),
         "occupied_zones": int((zone_occupancy > 0).sum()),
     }
@@ -535,6 +638,7 @@ def compare_solvers():
             "n_active": len([a for a in greedy_result.appliances if a.active]),
             "fans_on": [a.id for a in greedy_result.appliances if a.active and a.type == "fan"],
             "lights_on": [a.id for a in greedy_result.appliances if a.active and a.type == "light"],
+            "projectors_on": [a.id for a in greedy_result.appliances if a.active and a.type == "projector"],
         },
         "ppo": {
             "power_watts": ppo_result.get("total_power_watts", 0),
@@ -544,5 +648,67 @@ def compare_solvers():
             "avg_co2": ppo_result.get("avg_co2", 0),
             "fans_on": ppo_result.get("n_fans_on", 0),
             "lights_on": ppo_result.get("n_lights_on", 0),
+            "projectors_on": ppo_result.get("n_projectors_on", 0),
         } if "error" not in ppo_result else ppo_result,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+#  MQTT ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/mqtt_status", summary="Get MQTT connection status")
+def get_mqtt_status():
+    """Return the current MQTT bridge connection status."""
+    if mqtt_bridge is not None:
+        return mqtt_bridge.status
+    return {
+        "connected": False,
+        "available": False,
+        "message": "MQTT bridge not initialized (install paho-mqtt>=2.0)",
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  ANOMALY DETECTION ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+def _feed_anomaly_detector(state: dict):
+    """Feed a room state snapshot to the anomaly detector."""
+    if anomaly_detector is None:
+        return 0.0, []
+
+    reading = {
+        "avg_temp": state.get("avg_temp", 25.0),
+        "avg_co2": state.get("avg_co2", 400.0),
+        "avg_lux": state.get("avg_lux", 0.0),
+        "total_power": state.get("total_power_watts", 0.0),
+        "n_people": state.get("total_people", 0),
+        "n_active": state.get("n_active", 0),
+        "n_occupied_zones": state.get("occupied_zones", 0),
+    }
+    return anomaly_detector.update(reading)
+
+
+@app.get("/anomalies", summary="Get recent anomaly alerts")
+def get_anomalies(n: int = 20):
+    """Return the N most recent anomaly alerts from the River detector."""
+    if anomaly_detector is None:
+        return {
+            "available": False,
+            "message": "Anomaly detection not available (install river>=0.21)",
+            "alerts": [],
+        }
+    return {
+        "available": True,
+        "alerts": anomaly_detector.get_recent_alerts(n),
+        "statistics": anomaly_detector.get_statistics(),
+    }
+
+
+@app.get("/anomaly_stats", summary="Get anomaly detection statistics")
+def get_anomaly_stats():
+    """Return anomaly detector statistics and feature EMAs."""
+    if anomaly_detector is None:
+        return {"available": False}
+    return anomaly_detector.get_statistics()

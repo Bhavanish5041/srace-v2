@@ -42,13 +42,16 @@ class CoverageResult:
         self.lux_matrix = lux_matrix
         self.occupied_zones = occupied_zones
 
-        # Build appliance metadata (fans first, then lights)
+        # Build appliance metadata (fans, then lights, then projectors)
         self.appliance_ids = (
-            [f.id for f in cfg.fans] + [l.id for l in cfg.lights]
+            [f.id for f in cfg.fans]
+            + [l.id for l in cfg.lights]
+            + [p.id for p in cfg.projectors]
         )
         self.appliance_watts = np.array(
             [f.power_watts for f in cfg.fans]
             + [l.power_watts for l in cfg.lights]
+            + [p.power_watts for p in cfg.projectors]
         )
 
         # Build binary coverage matrix
@@ -64,35 +67,43 @@ class CoverageResult:
 
         Light covers a zone if:
           - lux contribution >= target_lux * 0.3 (meaningful contribution)
+
+        Projector covers a zone if:
+          - zone is within coverage_radius
         """
         n_fans = cfg.n_fans
         n_lights = cfg.n_lights
+        n_projectors = cfg.n_projectors
         n_zones = cfg.n_zones
-        n_total = n_fans + n_lights
+        n_total = n_fans + n_lights + n_projectors
 
         binary = np.zeros((n_total, n_zones), dtype=int)
 
         # Fan coverage
-        # Use 80% of min threshold for "meaningful contribution" — same logic
-        # as lights using 20 lux instead of the full 300 target.
-        # Without this, Gaussian decay causes adjacent zones to land at 0.49
-        # when threshold is 0.5, making greedy select zero fans.
         airflow_threshold = cfg.comfort.min_airflow_ms * 0.8
         for fi in range(n_fans):
             for zi in range(n_zones):
                 airflow_ok = self.airflow_matrix[fi, zi] >= airflow_threshold
-                thermal_ok = self.thermal_impact[fi, zi] >= 0.5  # 0.5°C threshold
+                thermal_ok = self.thermal_impact[fi, zi] >= 0.5
                 if airflow_ok or thermal_ok:
                     binary[fi, zi] = 1
 
-        # Light coverage — threshold: meaningful lux contribution
-        # A single light needn't meet the target alone; multiple lights combine.
-        # 20 lux = "this light meaningfully contributes to this zone"
+        # Light coverage
         lux_threshold = 20.0
         for li in range(n_lights):
             for zi in range(n_zones):
                 if self.lux_matrix[li, zi] >= lux_threshold:
                     binary[n_fans + li, zi] = 1
+
+        # Projector coverage — within coverage_radius
+        for pi, proj in enumerate(cfg.projectors):
+            for zi in range(n_zones):
+                z = cfg.zones[zi]
+                dx = proj.x - z.cx
+                dy = proj.y - z.cy
+                dist = np.sqrt(dx*dx + dy*dy)
+                if dist <= proj.coverage_radius:
+                    binary[n_fans + n_lights + pi, zi] = 1
 
         return binary
 

@@ -59,3 +59,4 @@ def total_airflow_per_zone(
         np.ndarray of shape (n_zones,) — total airflow per zone in m/s.
     """
     return airflow_matrix[active_fans].sum(axis=0)
+    
