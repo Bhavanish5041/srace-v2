@@ -2,10 +2,10 @@
 reward.py — Multi-objective reward function for SRACE PPO agent.
 
 Balances eight objectives:
-  1. Power minimisation   (α = 0.15)  — use less energy
-  2. Comfort maximisation (β = 0.55)  — temperature + CO₂ + lux
+  1. Power minimisation   (α = 0.25)  — use less energy
+  2. Comfort maximisation (β = 0.40)  — temperature + CO₂ + lux
   3. Switching penalty     (γ = 0.05)  — don't oscillate appliances
-  4. Air quality bonus     (δ = 0.25)  — keep CO₂ low in occupied zones
+  4. Air quality bonus     (δ = 0.30)  — keep CO₂ low in occupied zones
   5. Danger penalty        (ε = 0.50)  — hard penalty for unsafe conditions
   6. Stability bonus       (fixed 0.3) — reward maintaining good state
   7. Consistency penalty   (ζ = 0.10)  — penalise erratic appliance count swings
@@ -33,10 +33,10 @@ def calculate_reward(
     zone_co2: np.ndarray | None = None,
     zone_lux: np.ndarray | None = None,
     comfort_targets: dict | None = None,
-    alpha: float = 0.15,
-    beta: float = 0.55,
+    alpha: float = 0.25,
+    beta: float = 0.40,
     gamma: float = 0.05,
-    delta: float = 0.25,
+    delta: float = 0.30,
     epsilon: float = 0.50,
     zeta: float = 0.10,
 ) -> float:
@@ -79,7 +79,7 @@ def calculate_reward(
     # --- Default comfort targets ---
     if comfort_targets is None:
         comfort_targets = {
-            "target_temp": 25.0,
+            "target_temp": 27.0,
             "target_lux": 300.0,
             "max_co2": 1000.0,
         }

@@ -40,7 +40,7 @@
     { "id": "P1", "x": 5.0, "y": 0.5, "power_watts": 150, "screen_lux": 200, "coverage_radius": 4.0, "height_above_floor": 2.5 }
   ],
   "comfort": {
-    "target_temp_c": 25.0,
+    "target_temp_c": 27.0,
     "target_lux": 300.0,
     "max_co2_ppm": 1000.0,
     "min_airflow_ms": 0.5

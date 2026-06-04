@@ -48,6 +48,10 @@ def main():
         "--resume", type=str, default=None,
         help="Path to existing model to resume training from"
     )
+    parser.add_argument(
+        "--eval_freq", type=int, default=50000,
+        help="Evaluation frequency (default: 50000)"
+    )
     args = parser.parse_args()
 
     print("\n" + "═" * 60)
@@ -95,7 +99,7 @@ def main():
         eval_env,
         best_model_save_path=os.path.join(model_dir, "best"),
         log_path=os.path.join(model_dir, "eval_logs"),
-        eval_freq=max(500, args.timesteps // 20),  # evaluate ~20 times
+        eval_freq=args.eval_freq,
         n_eval_episodes=5,
         deterministic=True,
         verbose=1,

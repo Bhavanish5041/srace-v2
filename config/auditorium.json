@@ -53,8 +53,8 @@
     { "id": "P2", "x": 7.5, "y": 8.75, "power_watts": 200, "screen_lux": 250, "coverage_radius": 5.0, "height_above_floor": 3.5 }
   ],
   "comfort": {
-    "target_temp_c": 25.0,
-    "target_lux": 250.0,
+    "target_temp_c": 27.0,
+    "target_lux": 400.0,
     "max_co2_ppm": 1200.0,
     "min_airflow_ms": 0.5
   }
