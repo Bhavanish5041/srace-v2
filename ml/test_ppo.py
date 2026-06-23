@@ -58,6 +58,9 @@ def scenario_reset(env: SRACEEnv, scenario: str, seed=None):
     Reset env with a specific occupancy scenario.
     Returns (obs, info).
     """
+    if seed is not None:
+        np.random.seed(seed)
+        
     obs, info = env.reset(seed=seed)
 
     if scenario == "random":

@@ -240,6 +240,12 @@ def calculate_reward(
     # ═══════════════════════════════════════════════════════════════
     # Final reward
     # ═══════════════════════════════════════════════════════════════
+    occupied_zones = zone_people > 0
+    # appliance_states @ coverage_matrix maps (n_appliances) x (n_appliances, n_zones) -> (n_zones)
+    coverage_per_zone = appliance_states @ coverage_matrix
+    uncovered_occupied = np.sum(occupied_zones & (coverage_per_zone == 0))
+    coverage_penalty = -2.0 * uncovered_occupied
+
     reward = (
         -effective_alpha * normalised_power
         + beta * comfort_score
@@ -248,6 +254,7 @@ def calculate_reward(
         - epsilon * danger_penalty
         + stability_bonus
         - zeta * consistency_penalty
+        + coverage_penalty
     )
 
     return float(reward)

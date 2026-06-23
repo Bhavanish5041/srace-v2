@@ -16,11 +16,11 @@
     { "id": "F1",  "x": 1.25, "y": 1.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F2",  "x": 3.75, "y": 1.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F3",  "x": 6.25, "y": 1.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
-    { "id": "F4",  "x": 8.75, "y": 1.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F4",  "x": 8.75, "y": 4.00, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F5",  "x": 1.25, "y": 4.00, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F6",  "x": 3.75, "y": 4.00, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F7",  "x": 6.25, "y": 4.00, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
-    { "id": "F8",  "x": 8.75, "y": 4.00, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
+    { "id": "F8",  "x": 8.75, "y": 1.33, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F9",  "x": 2.50, "y": 6.67, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 },
     { "id": "F10", "x": 7.50, "y": 6.67, "power_watts": 75, "airflow_radius": 3.0, "airflow_peak_ms": 2.5 }
   ],

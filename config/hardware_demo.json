@@ -1,0 +1,34 @@
+{
+  "room": {
+    "name": "Hardware Demo (Cardboard Model)",
+    "width": 0.58,
+    "depth": 0.36,
+    "ceiling_height": 0.36,
+    "ambient_temp": 30.0,
+    "ambient_co2": 400.0,
+    "ambient_lux": 50.0
+  },
+  "zones": {
+    "cols": 2,
+    "rows": 2
+  },
+  "fans": [
+    { "id": "F1", "x": 0.145, "y": 0.27,  "power_watts": 75, "airflow_radius": 0.12, "airflow_peak_ms": 2.5 },
+    { "id": "F2", "x": 0.435, "y": 0.27,  "power_watts": 75, "airflow_radius": 0.12, "airflow_peak_ms": 2.5 },
+    { "id": "F3", "x": 0.145, "y": 0.09,  "power_watts": 75, "airflow_radius": 0.12, "airflow_peak_ms": 2.5 },
+    { "id": "F4", "x": 0.435, "y": 0.09,  "power_watts": 75, "airflow_radius": 0.12, "airflow_peak_ms": 2.5 }
+  ],
+  "lights": [
+    { "id": "L1",  "x": 0.145, "y": 0.27,  "power_watts": 10, "lumens": 800, "height_above_floor": 0.36 },
+    { "id": "L2",  "x": 0.435, "y": 0.27,  "power_watts": 10, "lumens": 800, "height_above_floor": 0.36 },
+    { "id": "L3",  "x": 0.145, "y": 0.09,  "power_watts": 10, "lumens": 800, "height_above_floor": 0.36 },
+    { "id": "L4",  "x": 0.435, "y": 0.09,  "power_watts": 10, "lumens": 800, "height_above_floor": 0.36 }
+  ],
+  "projectors": [],
+  "comfort": {
+    "target_temp_c": 27.0,
+    "target_lux": 300.0,
+    "max_co2_ppm": 1000.0,
+    "min_airflow_ms": 0.5
+  }
+}

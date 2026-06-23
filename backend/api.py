@@ -62,6 +62,16 @@ except ImportError:
     ANOMALY_AVAILABLE = False
     SRACEAnomalyDetector = None
 
+# ESP32 hardware bridge (loaded lazily — works without ESP32 plugged in)
+try:
+    from hardware.esp32_bridge import ESP32Bridge, SERIAL_AVAILABLE, NUM_FANS as HW_NUM_FANS, NUM_LEDS as HW_NUM_LEDS
+    ESP32_AVAILABLE = SERIAL_AVAILABLE
+except ImportError:
+    ESP32_AVAILABLE = False
+    ESP32Bridge = None
+    HW_NUM_FANS = 4
+    HW_NUM_LEDS = 4
+
 # ══════════════════════════════════════════════════════════════
 #  APP SETUP
 # ══════════════════════════════════════════════════════════════
@@ -88,7 +98,14 @@ app.add_middleware(
 #  STARTUP — Load config + pre-compute static physics
 # ══════════════════════════════════════════════════════════════
 
-CONFIG_PATH = PROJECT_ROOT / "config" / "classroom_real.json"
+# Allow overriding via environment variable, fallback to default_room.json
+env_config = os.environ.get("SRACE_CONFIG")
+if env_config:
+    CONFIG_PATH = Path(env_config)
+    if not CONFIG_PATH.is_absolute():
+        CONFIG_PATH = PROJECT_ROOT / CONFIG_PATH
+else:
+    CONFIG_PATH = PROJECT_ROOT / "config" / "classroom_real.json"
 
 cfg: RoomConfig = None
 airflow_mat: np.ndarray = None
@@ -96,6 +113,7 @@ lux_mat: np.ndarray = None
 ppo_model = None  # Loaded at startup if model file exists
 mqtt_bridge = None  # MQTT bridge instance
 anomaly_detector = None  # River anomaly detector instance
+esp32_bridge = None  # ESP32 hardware fan bridge instance
 
 # Current occupancy state (mutable — updated via POST /set_occupancy)
 zone_occupancy: np.ndarray = None
@@ -171,6 +189,22 @@ def startup():
         print("✓ River anomaly detector initialized")
     else:
         print("⚠ Anomaly detection not available (install river>=0.21)")
+
+    # Initialize ESP32 hardware bridge (if env var set)
+    global esp32_bridge
+    hw_enabled = os.environ.get("SRACE_HARDWARE", "0") == "1"
+    hw_port = os.environ.get("SRACE_HARDWARE_PORT", None)
+    if hw_enabled and ESP32_AVAILABLE and ESP32Bridge is not None:
+        esp32_bridge = ESP32Bridge(port=hw_port)
+        if esp32_bridge.connect():
+            print("✓ ESP32 hardware bridge connected")
+        else:
+            print("⚠ ESP32 hardware bridge failed to connect")
+            esp32_bridge = None
+    elif hw_enabled:
+        print("⚠ ESP32 bridge requested but pyserial not installed")
+    else:
+        print("  ESP32 hardware bridge disabled (set SRACE_HARDWARE=1 to enable)")
 
     print(f"✓ SRACE API ready — {cfg.n_zones} zones, {cfg.n_appliances} appliances\n")
 
@@ -264,6 +298,26 @@ def get_room_state():
     selected_set = set(result["selected_indices"])
     max_watts = sum(a.power_watts for a in cfg.all_appliances)
     saved_pct = (1 - result["total_watts"] / max_watts) * 100 if max_watts > 0 else 100.0
+
+    # ── Push to ESP32 hardware (if connected) ──
+    if esp32_bridge and esp32_bridge.connected:
+        # Fan states (first N appliances)
+        hw_fan_states = [
+            1 if fi in selected_set else 0
+            for fi in range(min(cfg.n_fans, HW_NUM_FANS))
+        ]
+        while len(hw_fan_states) < HW_NUM_FANS:
+            hw_fan_states.append(0)
+        esp32_bridge.send_fan_states(hw_fan_states)
+
+        # LED states (lights are appliances after fans)
+        hw_led_states = [
+            1 if (cfg.n_fans + li) in selected_set else 0
+            for li in range(min(cfg.n_lights, HW_NUM_LEDS))
+        ]
+        while len(hw_led_states) < HW_NUM_LEDS:
+            hw_led_states.append(0)
+        esp32_bridge.send_led_states(hw_led_states)
 
     # ── Build zone info ──
     # For each zone, compute the total airflow and lux from active appliances
@@ -395,6 +449,12 @@ def set_occupancy(req: OccupancyRequest):
     zone_occupancy = np.array(req.zone_people, dtype=float)
     total = int(zone_occupancy.sum())
     occupied_count = int((zone_occupancy > 0).sum())
+
+    # Trigger optimization and hardware push instantly
+    try:
+        get_room_state()
+    except Exception as e:
+        print(f"⚠ Failed to push hardware update from /set_occupancy: {e}")
 
     return {
         "status": "ok",
@@ -670,6 +730,56 @@ def get_mqtt_status():
 
 
 # ══════════════════════════════════════════════════════════════
+#  ESP32 HARDWARE ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/hardware_status", summary="Get ESP32 hardware bridge status")
+def get_hardware_status():
+    """Return the ESP32 fan controller connection status and current fan states."""
+    if esp32_bridge is not None:
+        return esp32_bridge.status
+    return {
+        "connected": False,
+        "port": None,
+        "fan_states": [0, 0, 0, 0],
+        "message": "ESP32 bridge not initialized (set SRACE_HARDWARE=1)",
+    }
+
+
+class HardwareTestRequest(BaseModel):
+    """POST body for /hardware_test."""
+    fan_states: list[int]
+
+    class Config:
+        json_schema_extra = {
+            "example": {"fan_states": [1, 0, 1, 0]}
+        }
+
+
+@app.post("/hardware_test", summary="Manually set fan states on ESP32")
+def hardware_test(req: HardwareTestRequest):
+    """
+    Directly set fan states on the ESP32 for wiring verification.
+    Bypasses the optimizer — use this to test that each fan responds.
+    """
+    if esp32_bridge is None or not esp32_bridge.connected:
+        raise HTTPException(
+            status_code=503,
+            detail="ESP32 not connected. Set SRACE_HARDWARE=1 and plug in ESP32.",
+        )
+    if len(req.fan_states) != HW_NUM_FANS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected {HW_NUM_FANS} fan states, got {len(req.fan_states)}",
+        )
+    ok = esp32_bridge.send_fan_states(req.fan_states)
+    return {
+        "status": "ok" if ok else "error",
+        "fan_states": esp32_bridge.fan_states,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
 #  ANOMALY DETECTION ENDPOINTS
 # ══════════════════════════════════════════════════════════════
 
@@ -712,3 +822,63 @@ def get_anomaly_stats():
     if anomaly_detector is None:
         return {"available": False}
     return anomaly_detector.get_statistics()
+
+
+# ══════════════════════════════════════════════════════════════
+#  CAMERA STATUS ENDPOINTS
+# ══════════════════════════════════════════════════════════════
+
+# Camera status (updated by vision/camera_feed.py via POST)
+_camera_status = {
+    "connected": False,
+    "url": "",
+    "fps": 0.0,
+    "persons_detected": 0,
+    "last_update": 0.0,
+    "frames_processed": 0,
+}
+
+
+class CameraStatusUpdate(BaseModel):
+    """POST body for /camera_status."""
+    connected: bool
+    url: str = ""
+    fps: float = 0.0
+    persons_detected: int = 0
+    frames_processed: int = 0
+
+
+@app.get("/camera_status", summary="Get camera pipeline status")
+def get_camera_status():
+    """
+    Return the current status of the vision pipeline
+    (camera_feed.py pushes updates here).
+    """
+    import time as _time
+    status = dict(_camera_status)
+    if status["last_update"] > 0:
+        status["seconds_since_update"] = round(_time.time() - status["last_update"], 1)
+        status["stale"] = status["seconds_since_update"] > 15
+    else:
+        status["seconds_since_update"] = -1
+        status["stale"] = True
+    return status
+
+
+@app.post("/camera_status", summary="Update camera pipeline status")
+def update_camera_status(update: CameraStatusUpdate):
+    """
+    Called by vision/camera_feed.py to report its status.
+    The React dashboard polls GET /camera_status to show connection state.
+    """
+    import time as _time
+    _camera_status.update({
+        "connected": update.connected,
+        "url": update.url,
+        "fps": update.fps,
+        "persons_detected": update.persons_detected,
+        "last_update": _time.time(),
+        "frames_processed": update.frames_processed,
+    })
+    return {"status": "ok"}
+

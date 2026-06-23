@@ -9,3 +9,7 @@ stable-baselines3>=2.3
 torch>=2.0
 paho-mqtt>=2.0
 river>=0.21
+ultralytics>=8.2
+opencv-python>=4.8
+requests>=2.31
+pyserial>=3.5

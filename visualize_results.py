@@ -106,7 +106,7 @@ def main():
 
     # Temperature
     axes[0, 1].plot(steps, data["temp"], color="#f0883e", linewidth=2)
-    axes[0, 1].axhline(y=25, color=COLORS["greedy"], linestyle="--", alpha=0.5, label="Target (25°C)")
+    axes[0, 1].axhline(y=27, color=COLORS["greedy"], linestyle="--", alpha=0.5, label="Target (27°C)")
     axes[0, 1].set_ylabel("Temperature (°C)")
     axes[0, 1].set_title("Temperature Control")
     axes[0, 1].legend(fontsize=9)
@@ -155,7 +155,7 @@ def main():
     axes[0, 0].grid(True, alpha=0.3)
 
     axes[0, 1].plot(steps, data_full["temp"], color="#f0883e", linewidth=2)
-    axes[0, 1].axhline(y=25, color=COLORS["greedy"], linestyle="--", alpha=0.5, label="Target (25°C)")
+    axes[0, 1].axhline(y=27, color=COLORS["greedy"], linestyle="--", alpha=0.5, label="Target (27°C)")
     axes[0, 1].set_ylabel("Temperature (°C)")
     axes[0, 1].set_title("Temperature Control")
     axes[0, 1].legend(fontsize=9)

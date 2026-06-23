@@ -153,15 +153,12 @@ class SRACEEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        # ── Randomise occupancy ──
-        # Random scenario: 0-60% zone occupation, 0-8 people per zone
+        # Full domain randomization — uniform across all occupancy levels
         n_occupied = self.np_random.integers(0, self.n_zones + 1)
-        occupied_zones = self.np_random.choice(
-            self.n_zones, size=n_occupied, replace=False
-        )
-        self.zone_people = np.zeros(self.n_zones)
+        occupied_zones = self.np_random.choice(self.n_zones, size=n_occupied, replace=False)
+        self.zone_people = np.zeros(self.n_zones, dtype=np.float32)
         for zi in occupied_zones:
-            self.zone_people[zi] = self.np_random.integers(1, MAX_PEOPLE_PER_ZONE + 1)
+            self.zone_people[zi] = self.np_random.integers(1, 8)
 
         # ── Reset physics state ──
         self.zone_temps = np.full(
