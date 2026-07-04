@@ -41,12 +41,12 @@ SRACE fixes this with real intelligence: physics-based models, mathematical opti
 * FastAPI Swagger UI: live data, power metrics, anomaly stats
 * RPi LED Panel: MQTT-driven appliance state indicators
 
-## Current Progress
+## Features and Capabilities
 
-* **Week 1: Python Core (Complete)**: Config loader, physics models, coverage matrix, Greedy and ILP optimizers, orchestrator, and Matplotlib visualization.
-* **Week 2: Unity Simulation (Complete)**: Code-generated 3D room, animated fans and lights, zone heatmap, orbit camera, C# physics ports, and Live Power HUD.
-* **Week 3: RL + Backend + Integration (Complete)**: Gymnasium environment, PPO pipeline, multi-objective reward function, FastAPI backend, Unity to Python bridge, GA optimizer, and Live HTML dashboard.
-* **Week 4: Advanced Features (Complete)**: Projector appliance type, C# Thermal and CO2 ODE models, PPO environment updated for projectors, MQTT real-time bridge, River streaming anomaly detection, and PPO diagnostics toolkit.
+* **Python Core**: Config loader, physics models, coverage matrix, Greedy and ILP optimizers, orchestrator, and Matplotlib visualization.
+* **Unity Simulation**: Code-generated 3D room, animated fans and lights, zone heatmap, orbit camera, C# physics ports, and Live Power HUD.
+* **RL, Backend, and Integration**: Gymnasium environment, PPO pipeline, multi-objective reward function, FastAPI backend, Unity to Python bridge, GA optimizer, and Live HTML dashboard.
+* **Advanced Functionality**: Projector appliance type, C# Thermal and CO2 ODE models, PPO environment updated for projectors, MQTT real-time bridge, River streaming anomaly detection, and PPO diagnostics toolkit.
 
 ## Visualizations
 
