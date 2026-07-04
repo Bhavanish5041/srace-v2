@@ -90,7 +90,7 @@ def main():
     data = run_ppo_episode_detailed(model, env, "sparse", seed=42)
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 8))
-    fig.suptitle("SRACE PPO Agent — Sparse Occupancy (3/12 zones)",
+    fig.suptitle("SRACE PPO Agent - Sparse Occupancy (3/12 zones)",
                  fontsize=16, fontweight="bold", color="#58a6ff")
 
     steps = range(len(data["power"]))
@@ -141,7 +141,7 @@ def main():
     data_full = run_ppo_episode_detailed(model, env, "full", seed=42)
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 8))
-    fig.suptitle("SRACE PPO Agent — Full Occupancy (12/12 zones, 60 people)",
+    fig.suptitle("SRACE PPO Agent - Full Occupancy (12/12 zones, 60 people)",
                  fontsize=16, fontweight="bold", color="#f85149")
 
     steps = range(len(data_full["power"]))
@@ -210,7 +210,7 @@ def main():
 
     # Bar chart
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("SRACE — PPO vs Baselines (10 Random Episodes)",
+    fig.suptitle("SRACE - PPO vs Baselines (10 Random Episodes)",
                  fontsize=16, fontweight="bold", color="#58a6ff")
 
     strategies = ["PPO Agent", "All ON", "All OFF", "Random"]

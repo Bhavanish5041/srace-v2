@@ -107,7 +107,7 @@ def _draw_optimizer_comparison(ax, cfg, greedy, ilp):
 def render_room_state(cfg, coverage, zone_occupancy, greedy_result, ilp_result,
                       airflow_matrix, lux_matrix, save_path=None, show=True):
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle(f"SRACE v2 — {cfg.name}  |  {cfg.n_zones} zones  |  "
+    fig.suptitle(f"SRACE v2 - {cfg.name}  |  {cfg.n_zones} zones  |  "
                  f"{int(zone_occupancy.sum())} people",
                  fontsize=16, fontweight="bold", color="#e2e8f0")
     fig.patch.set_facecolor("#0f172a")
@@ -118,9 +118,9 @@ def render_room_state(cfg, coverage, zone_occupancy, greedy_result, ilp_result,
 
     _draw_room_layout(axes[0, 0], cfg, zone_occupancy)
     _draw_heatmap(axes[0, 1], cfg, airflow_matrix, greedy_result["selected_indices"],
-                  AIRFLOW_CMAP, "Airflow (m/s) — Active Fans", is_fan=True)
+                  AIRFLOW_CMAP, "Airflow (m/s) - Active Fans", is_fan=True)
     _draw_heatmap(axes[1, 0], cfg, lux_matrix, greedy_result["selected_indices"],
-                  LUX_CMAP, "Illuminance (lux) — Active Lights", is_fan=False)
+                  LUX_CMAP, "Illuminance (lux) - Active Lights", is_fan=False)
     _draw_optimizer_comparison(axes[1, 1], cfg, greedy_result, ilp_result)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     if save_path:
